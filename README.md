@@ -1,6 +1,47 @@
 # Content Saver MCP Server + Next.js Web UI
 
-A minimal, local storage MCP (Model Context Protocol) server with a Next.js Web UI that allows AI assistants (ChatGPT, Claude, Cursor) and humans to capture notes and links with automatic deduplication and smart tagging.
+## 🚨 Problem Statement
+
+Modern AI tools (ChatGPT, Claude, Cursor, etc.) make it easy to generate insights, discover useful links, brainstorm ideas, and gather knowledge — but there’s no simple, private, consistent way to save or retrieve this information later.
+
+Today:
+
+- Important content gets buried in long chat histories  
+- Notes and useful links end up scattered across Notion, bookmarks, docs, chats, screenshots, and dozens of different apps  
+- There is no unified personal “memory layer” that works across AI tools  
+- Existing solutions are often heavy, require manual organization, or send data to the cloud  
+- Many users prefer local-first, private, offline storage  
+- And there is still no universal “save this” command that works the same way in ChatGPT, Claude, Cursor, and other AI assistants
+
+As a result, valuable knowledge becomes fragmented, lost, or difficult to reuse.
+
+---
+
+## 🎯 Goal
+
+Provide a lightweight, local-first, AI-integrated way to:
+
+- Save notes and links instantly (via AI or web UI)  
+- Auto-tag content (client-side AI tagging)  
+- Prevent duplicate URLs  
+- Search, filter, and retrieve saved content  
+- Keep everything local, private, and under the user’s control  
+- Access everything through a clean Next.js Web UI or via any MCP-enabled AI assistant
+
+---
+
+## 💡 Why This Project Exists
+
+**Content Saver MCP** is a minimal “personal knowledge vault” that:
+
+- Works with any MCP-enabled AI assistant  
+- Lets you use natural language to save and search content  
+- Stores everything locally in a simple JSON format  
+- Provides a lightweight web dashboard for browsing, filtering, and managing your content  
+- Avoids cloud dependency, databases, and complex configuration  
+- Delivers the missing “memory layer” modern AI workflows need
+
+It's simple, local-first, private — and built to integrate naturally into everyday AI usage.
 
 ## Features
 
