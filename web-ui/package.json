@@ -1,0 +1,32 @@
+{
+  "name": "content-saver-web-ui",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "predev": "node scripts/check-env.js",
+    "dev": "next dev",
+    "prebuild": "node scripts/check-env.js",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test:openai": "node test-openai.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.22.0",
+    "next": "^14.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "optionalDependencies": {
+    "openai": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "autoprefixer": "^10.4.22",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.18",
+    "typescript": "^5.3.3"
+  }
+}

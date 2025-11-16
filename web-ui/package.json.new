@@ -1,0 +1,11 @@
+{
+  "scripts": {
+    "predev": "node scripts/check-env.js",
+    "dev": "next dev",
+    "prebuild": "node scripts/check-env.js",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  }
+}
+

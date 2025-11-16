@@ -1,0 +1,108 @@
+[
+  {
+    "type": "link",
+    "url": "https://openai.com/index/sora-2/",
+    "title": "Sora 2 by OpenAI",
+    "body": "Explore Sora 2, the advanced AI model developed by OpenAI, designed for enhanced conversational experiences and broader applications.",
+    "tags": [
+      "openai",
+      "sora",
+      "ai",
+      "technology",
+      "machine learning",
+      "sora2",
+      "machinelearning"
+    ],
+    "id": "mi1om6ug2g3fjo7hifh",
+    "createdAt": "2025-11-16T12:18:24.424Z",
+    "updatedAt": "2025-11-16T14:15:12.907Z"
+  },
+  {
+    "type": "link",
+    "url": "https://semianalysis.com/dylan-patel/",
+    "title": "Dylan Patel Insights",
+    "body": "A detailed profile and analysis of Dylan Patel's work and contributions in the technology sector.",
+    "tags": [
+      "dylan patel",
+      "technology",
+      "analysis",
+      "profile",
+      "semianalysis"
+    ],
+    "id": "mi1omncmi3c0glbyizn",
+    "createdAt": "2025-11-16T12:18:45.814Z"
+  },
+  {
+    "type": "link",
+    "url": "https://www.youtube.com/c/DwarkeshPatel",
+    "title": "Dwarkesh Patel's YouTube Channel",
+    "body": "Official YouTube channel of Dwarkesh Patel featuring educational content and insights on various topics.",
+    "tags": [
+      "dwarkesh patel",
+      "education",
+      "youtube channel",
+      "insights",
+      "learning"
+    ],
+    "id": "mi1on0fb8pp7ogculw2",
+    "createdAt": "2025-11-16T12:19:02.759Z"
+  },
+  {
+    "type": "link",
+    "url": "https://www.youtube.com/watch?v=lXUZvyajciY",
+    "title": "Understanding Quantum Computing",
+    "body": "A comprehensive video explaining the fundamentals and applications of quantum computing.",
+    "tags": [
+      "quantum computing",
+      "technology",
+      "education",
+      "science",
+      "video"
+    ],
+    "id": "mi1onqfkresex1btala",
+    "createdAt": "2025-11-16T12:19:36.464Z"
+  },
+  {
+    "type": "link",
+    "url": "https://arxiv.org/html/2510.04871v1",
+    "title": "Quantum Mechanics and General Relativity",
+    "body": "This paper discusses the intersection of quantum mechanics and general relativity, exploring theoretical implications and potential frameworks for unification.",
+    "tags": [
+      "quantum mechanics",
+      "general relativity",
+      "theoretical physics",
+      "unification",
+      "arxiv"
+    ],
+    "id": "mi1oof0xob7brx0buo",
+    "createdAt": "2025-11-16T12:20:08.337Z"
+  },
+  {
+    "type": "link",
+    "url": "https://www.youtube.com/watch?v=82SyOtc9flA&t=929s",
+    "title": "Understanding Quantum Computing",
+    "body": "A detailed lecture exploring the principles and applications of quantum computing technology.",
+    "tags": [
+      "quantum computing",
+      "technology",
+      "lecture",
+      "education",
+      "science"
+    ],
+    "id": "mi1opeibf5ysnqjkpve",
+    "createdAt": "2025-11-16T12:20:54.323Z"
+  },
+  {
+    "type": "note",
+    "body": "this article seems interesting - medicalnewstoday.com/articles/artificial-sweeteners-and-brain-aging-what-we-know-so-far",
+    "tags": [
+      "artificial sweeteners",
+      "brain aging",
+      "health news",
+      "nutrition",
+      "medical research"
+    ],
+    "id": "mi1ot6143jn8k7s0c61",
+    "createdAt": "2025-11-16T12:23:49.960Z"
+  }
+]
