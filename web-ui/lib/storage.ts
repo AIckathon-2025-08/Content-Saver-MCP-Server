@@ -10,11 +10,17 @@ import { ContentItem, SaveResult } from '../types';
 // Use /tmp on Vercel (writable), or .content-saver in project root for local dev
 const getStoragePath = () => {
   // On Vercel, use /tmp (writable directory)
+  // NOTE: /tmp is ephemeral - data is lost when function instance is recycled
   if (process.env.VERCEL || process.env.VERCEL_ENV) {
-    return join('/tmp', '.content-saver');
+    const tmpPath = join('/tmp', '.content-saver');
+    console.log('📁 Using Vercel storage path:', tmpPath);
+    console.log('⚠️  WARNING: Data is ephemeral on Vercel (lost on function restart)');
+    return tmpPath;
   }
   // Local development: use project root
-  return join(process.cwd(), '.content-saver');
+  const localPath = join(process.cwd(), '.content-saver');
+  console.log('📁 Using local storage path:', localPath);
+  return localPath;
 };
 
 const STORAGE_DIR = getStoragePath();
@@ -43,7 +49,10 @@ export class Storage {
           this.items = JSON.parse(data);
           // Validate that loaded data is an array
           if (!Array.isArray(this.items)) {
+            console.warn('Storage file contains invalid data, starting fresh');
             this.items = [];
+          } else {
+            console.log(`✅ Loaded ${this.items.length} items from storage`);
           }
         } catch (error) {
           // If file is corrupted, start fresh
@@ -52,6 +61,7 @@ export class Storage {
         }
       } else {
         // File doesn't exist, start with empty array
+        console.log('📝 Storage file does not exist, starting with empty storage');
         this.items = [];
       }
     } catch (error) {
@@ -76,10 +86,13 @@ export class Storage {
       const tempFile = `${STORAGE_FILE}.tmp`;
       await writeFile(tempFile, JSON.stringify(this.items, null, 2), 'utf-8');
       await writeFile(STORAGE_FILE, JSON.stringify(this.items, null, 2), 'utf-8');
+      console.log(`💾 Persisted ${this.items.length} items to storage`);
     } catch (error) {
       // On Vercel, if write fails, continue with in-memory storage
       // Data will be lost on function restart, but app continues to work
-      console.warn('Failed to persist storage (using in-memory only):', error instanceof Error ? error.message : String(error));
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.warn('⚠️  Failed to persist storage (using in-memory only):', errorMsg);
+      console.warn('⚠️  Data will be lost when function instance is recycled');
       // Don't throw - allow app to continue with in-memory storage
     }
   }
