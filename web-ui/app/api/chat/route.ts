@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ContentItem } from '@/types';
 import { saveNote, saveLink } from '@/lib/mcp-client';
+import { getOpenAIKey, isValidOpenAIKeyFormat } from '@/lib/config';
 
 // Simple in-memory rate limiting (for production, use Redis or similar)
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
@@ -57,20 +58,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Security: Only use server-side environment variables
+    // Security: Use validated API key from secure config
     // Client-provided API keys are no longer accepted
-    const apiKey = process.env.OPENAI_API_KEY || '';
+    const apiKey = getOpenAIKey();
+    const hasValidKey = isValidOpenAIKeyFormat(apiKey);
     
     // Logging (reduced for production security)
     if (process.env.NODE_ENV === 'development') {
       console.log('Chat API called:', {
         messageLength: message.length,
         itemsCount: items.length,
-        hasApiKey: !!apiKey,
+        hasApiKey: hasValidKey,
       });
     }
     
-    if (!apiKey || apiKey.trim() === '') {
+    if (!hasValidKey) {
       // Fallback: Simple rule-based responses
       return NextResponse.json({
         response: generateFallbackResponse(message, items),
@@ -223,7 +225,7 @@ Make the follow-up questions:
     console.error('Error details:', {
       message: error.message,
       itemsCount: items.length,
-      hasApiKey: !!process.env.OPENAI_API_KEY,
+      hasApiKey: isValidOpenAIKeyFormat(process.env.OPENAI_API_KEY || ''),
     });
     
     // Fallback response - use already parsed values
