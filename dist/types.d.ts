@@ -44,4 +44,21 @@ export interface SaveResult {
     item: ContentItem;
     isDuplicate: boolean;
 }
+/**
+ * Input for updating an existing item (partial updates supported)
+ */
+export interface UpdateItemInput {
+    id: string;
+    title?: string;
+    body?: string;
+    url?: string;
+    tags?: string[];
+}
+/**
+ * Result for update operations
+ */
+export interface UpdateResult {
+    item: ContentItem;
+    updated: boolean;
+}
 //# sourceMappingURL=types.d.ts.map

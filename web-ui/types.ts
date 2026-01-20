@@ -37,3 +37,16 @@ export interface SaveResult {
   isDuplicate: boolean;
 }
 
+export interface UpdateItemInput {
+  id: string;
+  title?: string;
+  body?: string;
+  url?: string;
+  tags?: string[];
+}
+
+export interface UpdateResult {
+  item: ContentItem;
+  updated: boolean;
+}
+

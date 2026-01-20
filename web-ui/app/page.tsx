@@ -6,6 +6,7 @@ import Sidebar from '@/components/Sidebar';
 import ItemList from '@/components/ItemList';
 import ItemDetail from '@/components/ItemDetail';
 import AddItemModal from '@/components/AddItemModal';
+import EditItemModal from '@/components/EditItemModal';
 import ChatPanel from '@/components/ChatPanel';
 import SettingsModal from '@/components/SettingsModal';
 import { ContentItem } from '@/types';
@@ -20,6 +21,8 @@ export default function Home() {
   const [addModalType, setAddModalType] = useState<'note' | 'link'>('note');
   const [showChat, setShowChat] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingItem, setEditingItem] = useState<ContentItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
@@ -178,6 +181,50 @@ export default function Home() {
     setShowAddModal(true);
   };
 
+  const handleOpenEditModal = (item: ContentItem) => {
+    setEditingItem(item);
+    setShowEditModal(true);
+  };
+
+  const handleEditItem = async (id: string, updates: {
+    title?: string;
+    body?: string;
+    url?: string;
+    tags?: string[];
+  }) => {
+    try {
+      setError(null);
+      const response = await fetch(`/api/items/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to update item');
+      }
+
+      const result = await response.json();
+
+      // Update the item in local state
+      setItems(prev => prev.map(item =>
+        item.id === id ? result.item : item
+      ));
+
+      // Update selectedItem if it was the edited item
+      if (selectedItem?.id === id) {
+        setSelectedItem(result.item);
+      }
+
+      setShowEditModal(false);
+      setEditingItem(null);
+    } catch (error) {
+      console.error('Error updating item:', error);
+      throw error; // Re-throw to let modal handle the error
+    }
+  };
+
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
       <Sidebar
@@ -229,6 +276,7 @@ export default function Home() {
               item={selectedItem}
               onClose={() => setSelectedItem(null)}
               onDelete={handleDeleteItem}
+              onEdit={handleOpenEditModal}
             />
           )}
           
@@ -252,7 +300,18 @@ export default function Home() {
           onSave={handleAddItem}
         />
       )}
-      
+
+      {showEditModal && editingItem && (
+        <EditItemModal
+          item={editingItem}
+          onClose={() => {
+            setShowEditModal(false);
+            setEditingItem(null);
+          }}
+          onSave={handleEditItem}
+        />
+      )}
+
       {showSettings && (
         <SettingsModal
           isOpen={showSettings}

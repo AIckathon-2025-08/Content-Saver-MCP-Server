@@ -134,6 +134,37 @@ class ContentSaverServer {
                         required: ['id'],
                     },
                 },
+                {
+                    name: 'update_item',
+                    description: 'Update an existing item (note or link) by its ID. Supports partial updates - only provided fields will be changed.',
+                    inputSchema: {
+                        type: 'object',
+                        properties: {
+                            id: {
+                                type: 'string',
+                                description: 'The unique ID of the item to update',
+                            },
+                            title: {
+                                type: 'string',
+                                description: 'New title for the item (optional)',
+                            },
+                            body: {
+                                type: 'string',
+                                description: 'New body text/comment for the item (optional)',
+                            },
+                            url: {
+                                type: 'string',
+                                description: 'New URL for links only (optional, ignored for notes)',
+                            },
+                            tags: {
+                                type: 'array',
+                                items: { type: 'string' },
+                                description: 'New tags array - replaces existing tags if provided (optional)',
+                            },
+                        },
+                        required: ['id'],
+                    },
+                },
             ],
         }));
         // Handle tool calls
@@ -151,6 +182,8 @@ class ContentSaverServer {
                         return await this.handleListRecent(args);
                     case 'delete_item':
                         return await this.handleDeleteItem((args || {}));
+                    case 'update_item':
+                        return await this.handleUpdateItem((args || {}));
                     default:
                         throw new Error(`Unknown tool: ${name}`);
                 }
@@ -333,6 +366,65 @@ class ContentSaverServer {
                 {
                     type: 'text',
                     text: `🗑️ Item deleted successfully\nID: ${args.id}`,
+                },
+            ],
+        };
+    }
+    async handleUpdateItem(args) {
+        if (!args.id || args.id.trim() === '') {
+            throw new Error('Item ID is required');
+        }
+        // Validate URL format if provided
+        if (args.url !== undefined && args.url.trim() !== '') {
+            try {
+                new URL(args.url);
+            }
+            catch {
+                throw new Error('Invalid URL format');
+            }
+        }
+        const result = await this.storage.updateItem(args.id, {
+            title: args.title,
+            body: args.body,
+            url: args.url,
+            tags: args.tags,
+        });
+        if (!result) {
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: `Error: Item with ID "${args.id}" not found.`,
+                    },
+                ],
+                isError: true,
+            };
+        }
+        const { item, updated } = result;
+        const emoji = item.type === 'note' ? '📝' : '🔗';
+        if (!updated) {
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: `ℹ️ No changes made to ${item.type}\nID: ${item.id}`,
+                    },
+                    {
+                        type: 'text',
+                        text: `__MCP_DATA__:${JSON.stringify({ item, updated: false })}`,
+                    },
+                ],
+            };
+        }
+        return {
+            content: [
+                {
+                    type: 'text',
+                    text: `${emoji} ${item.type.charAt(0).toUpperCase() + item.type.slice(1)} updated successfully\nID: ${item.id}${item.title ? `\nTitle: "${item.title}"` : ''}\nTags: ${item.tags.length > 0 ? item.tags.join(', ') : 'none'}`,
+                },
+                {
+                    type: 'text',
+                    text: `__MCP_DATA__:${JSON.stringify({ item, updated: true })}`,
                 },
             ],
         };

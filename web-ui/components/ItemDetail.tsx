@@ -6,9 +6,10 @@ interface ItemDetailProps {
   item: ContentItem;
   onClose: () => void;
   onDelete: (id: string) => void;
+  onEdit: (item: ContentItem) => void;
 }
 
-export default function ItemDetail({ item, onClose, onDelete }: ItemDetailProps) {
+export default function ItemDetail({ item, onClose, onDelete, onEdit }: ItemDetailProps) {
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleString('en-US', {
@@ -133,7 +134,14 @@ export default function ItemDetail({ item, onClose, onDelete }: ItemDetailProps)
       </div>
 
       {/* Actions */}
-      <div className="p-4 border-t border-gray-200 bg-gray-50">
+      <div className="p-4 border-t border-gray-200 bg-gray-50 space-y-2">
+        <button
+          onClick={() => onEdit(item)}
+          className="w-full px-4 py-2.5 bg-primary-500 text-white rounded-lg text-sm font-medium hover:bg-primary-600 transition-colors focus-ring"
+          aria-label={`Edit ${item.title || 'item'}`}
+        >
+          Edit Item
+        </button>
         <button
           onClick={() => onDelete(item.id)}
           className="w-full px-4 py-2.5 bg-danger-500 text-white rounded-lg text-sm font-medium hover:bg-danger-600 transition-colors focus-ring"

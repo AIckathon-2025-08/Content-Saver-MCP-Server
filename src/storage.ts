@@ -1,7 +1,7 @@
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
-import { ContentItem, SaveResult } from './types.js';
+import { ContentItem, SaveResult, UpdateResult } from './types.js';
 
 const STORAGE_DIR = join(process.cwd(), '.content-saver');
 const STORAGE_FILE = join(STORAGE_DIR, 'items.json');
@@ -234,6 +234,87 @@ export class Storage {
    */
   getItemById(id: string): ContentItem | null {
     return this.items.find(item => item.id === id) || null;
+  }
+
+  /**
+   * Update an existing item by ID
+   * Supports partial updates - only provided fields are updated
+   */
+  async updateItem(id: string, updates: {
+    title?: string;
+    body?: string;
+    url?: string;
+    tags?: string[];
+  }): Promise<UpdateResult | null> {
+    const index = this.items.findIndex(item => item.id === id);
+    if (index === -1) {
+      return null;
+    }
+
+    const existingItem = this.items[index];
+    let hasChanges = false;
+
+    const updatedItem: ContentItem = { ...existingItem };
+
+    // Update title if provided
+    if (updates.title !== undefined) {
+      const newTitle = updates.title.trim() || undefined;
+      if (newTitle !== existingItem.title) {
+        updatedItem.title = newTitle;
+        hasChanges = true;
+      }
+    }
+
+    // Update body if provided
+    if (updates.body !== undefined) {
+      const newBody = updates.body.trim() || undefined;
+      if (newBody !== existingItem.body) {
+        updatedItem.body = newBody;
+        hasChanges = true;
+      }
+    }
+
+    // Only allow URL updates for links
+    if (updates.url !== undefined && existingItem.type === 'link') {
+      const newUrl = updates.url.trim();
+      if (newUrl && newUrl !== existingItem.url) {
+        // Check for duplicate URL (excluding current item)
+        const normalizedNewUrl = this.normalizeUrl(newUrl);
+        const duplicate = this.items.find(item =>
+          item.id !== id &&
+          item.type === 'link' &&
+          item.url &&
+          this.normalizeUrl(item.url) === normalizedNewUrl
+        );
+        if (duplicate) {
+          throw new Error('A link with this URL already exists');
+        }
+        updatedItem.url = newUrl;
+        hasChanges = true;
+      }
+    }
+
+    // Update tags if provided
+    if (updates.tags !== undefined) {
+      const newTags = updates.tags.map(t => t.trim()).filter(t => t.length > 0);
+      const tagsChanged = JSON.stringify(newTags.sort()) !== JSON.stringify([...existingItem.tags].sort());
+      if (tagsChanged) {
+        updatedItem.tags = newTags;
+        hasChanges = true;
+      }
+    }
+
+    // Only persist if changes were made
+    if (hasChanges) {
+      updatedItem.updatedAt = new Date().toISOString();
+      this.items[index] = updatedItem;
+      await this.persist();
+    }
+
+    return {
+      item: updatedItem,
+      updated: hasChanges
+    };
   }
 }
 

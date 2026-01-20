@@ -7,7 +7,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { join } from 'path';
 import { existsSync } from 'fs';
-import { ContentItem, SaveNoteInput, SaveLinkInput, SearchFilters, SaveResult } from '../types';
+import { ContentItem, SaveNoteInput, SaveLinkInput, SearchFilters, SaveResult, UpdateResult } from '../types';
 
 let mcpClient: Client | null = null;
 let mcpTransport: StdioClientTransport | null = null;
@@ -339,4 +339,72 @@ export async function getAllItems(): Promise<ContentItem[]> {
 export async function getItemById(id: string): Promise<ContentItem | null> {
   const storage = await getDirectStorage();
   return storage.getItemById(id);
+}
+
+/**
+ * Update an existing item using MCP protocol (falls back to direct storage)
+ */
+export async function updateItem(
+  id: string,
+  updates: {
+    title?: string;
+    body?: string;
+    url?: string;
+    tags?: string[];
+  }
+): Promise<UpdateResult | null> {
+  try {
+    const result = await callMCPTool('update_item', {
+      id,
+      ...updates,
+    });
+
+    // Fallback to direct storage if MCP is not available
+    if (!result) {
+      const storage = await getDirectStorage();
+      return await storage.updateItem(id, updates);
+    }
+
+    // Check for error response
+    if (result.isError) {
+      const errorText = (result.content as any)?.[0]?.text || '';
+      if (errorText.includes('not found')) {
+        return null;
+      }
+      throw new Error(errorText);
+    }
+
+    // Extract data from MCP response
+    const dataContent = (result.content as any)?.find((c: any) =>
+      c.text && c.text.startsWith('__MCP_DATA__:')
+    );
+
+    if (dataContent) {
+      try {
+        const jsonStr = dataContent.text.replace('__MCP_DATA__:', '');
+        const data = JSON.parse(jsonStr);
+        return {
+          item: data.item,
+          updated: data.updated,
+        };
+      } catch (e) {
+        console.error('Failed to parse MCP data:', e);
+      }
+    }
+
+    // Fallback: fetch the item directly
+    const storage = await getDirectStorage();
+    const item = storage.getItemById(id);
+    return item ? { item, updated: true } : null;
+  } catch (error) {
+    console.error('MCP update_item error:', error);
+
+    // Try fallback to direct storage
+    try {
+      const storage = await getDirectStorage();
+      return await storage.updateItem(id, updates);
+    } catch (fallbackError) {
+      throw error;
+    }
+  }
 }

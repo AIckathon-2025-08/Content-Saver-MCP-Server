@@ -1,4 +1,4 @@
-import { ContentItem, SaveResult } from './types.js';
+import { ContentItem, SaveResult, UpdateResult } from './types.js';
 /**
  * Storage manager for content items
  */
@@ -53,5 +53,15 @@ export declare class Storage {
      * Get item by ID
      */
     getItemById(id: string): ContentItem | null;
+    /**
+     * Update an existing item by ID
+     * Supports partial updates - only provided fields are updated
+     */
+    updateItem(id: string, updates: {
+        title?: string;
+        body?: string;
+        url?: string;
+        tags?: string[];
+    }): Promise<UpdateResult | null>;
 }
 //# sourceMappingURL=storage.d.ts.map
