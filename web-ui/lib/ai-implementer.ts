@@ -1,20 +1,17 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// 🤖 AI CODE IMPLEMENTER
+// 🤖 AI CODE IMPLEMENTER (Vercel-Compatible)
 // ═══════════════════════════════════════════════════════════════════════════
 //
 // Automatically implements features based on Jira ticket requirements:
 // 1. Analyzes the codebase structure
 // 2. Understands ticket requirements
-// 3. Generates code changes
-// 4. Commits and pushes to GitHub
-// 5. Waits for Vercel deployment
+// 3. Generates code changes using GPT-4o
+// 4. Commits via GitHub API (works on Vercel)
+// 5. Vercel auto-deploys on push
 //
 // ═══════════════════════════════════════════════════════════════════════════
 
 import OpenAI from 'openai';
-import { execSync } from 'child_process';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { join } from 'path';
 
 interface TicketRequirements {
   ticketKey: string;
@@ -39,107 +36,110 @@ interface CodeChange {
   description: string;
 }
 
-// Project root path
-const PROJECT_ROOT = process.cwd().includes('web-ui') 
-  ? process.cwd() 
-  : join(process.cwd(), 'web-ui');
+// GitHub configuration
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
+const GITHUB_OWNER = 'AIckathon-2025-08';
+const GITHUB_REPO = 'Content-Saver-MCP-Server';
+const GITHUB_BRANCH = 'main';
 
 /**
- * Main function to implement a feature based on ticket requirements
+ * Main function to implement a feature
  */
 export async function implementFeature(ticket: TicketRequirements): Promise<ImplementationResult> {
-  console.log(`\n🤖 AI IMPLEMENTER: Starting ${ticket.ticketKey}`);
+  console.log(`\n🤖 AI IMPLEMENTER: ${ticket.ticketKey}`);
   
   const openaiKey = process.env.OPENAI_API_KEY;
   if (!openaiKey) {
-    return {
-      success: false,
-      filesChanged: [],
-      error: 'OPENAI_API_KEY not configured',
-    };
+    return { success: false, filesChanged: [], error: 'OPENAI_API_KEY not configured' };
+  }
+
+  if (!GITHUB_TOKEN) {
+    return { success: false, filesChanged: [], error: 'GITHUB_TOKEN not configured' };
   }
 
   try {
     const openai = new OpenAI({ apiKey: openaiKey });
 
-    // Step 1: Analyze the codebase
-    console.log('   📁 Analyzing codebase...');
-    const codebaseContext = await analyzeCodebase();
+    // Step 1: Get codebase context from GitHub
+    console.log('   📁 Fetching codebase from GitHub...');
+    const codebaseContext = await fetchCodebaseFromGitHub();
 
     // Step 2: Generate implementation plan
     console.log('   🧠 Generating implementation plan...');
-    const implementationPlan = await generateImplementationPlan(
-      openai,
-      ticket,
-      codebaseContext
-    );
+    const plan = await generateImplementationPlan(openai, ticket, codebaseContext);
 
     // Step 3: Generate code changes
-    console.log('   💻 Generating code...');
-    const codeChanges = await generateCodeChanges(
-      openai,
-      ticket,
-      implementationPlan,
-      codebaseContext
-    );
+    console.log('   💻 Generating code changes...');
+    const codeChanges = await generateCodeChanges(openai, ticket, plan, codebaseContext);
 
-    if (codeChanges.length === 0) {
-      return {
-        success: false,
-        filesChanged: [],
-        error: 'No code changes generated',
-      };
+    if (!codeChanges || codeChanges.length === 0) {
+      return { success: false, filesChanged: [], error: 'No code changes generated' };
     }
 
-    // Step 4: Apply code changes
-    console.log('   ✏️ Applying changes...');
-    const appliedFiles = applyCodeChanges(codeChanges);
+    console.log(`   📝 Generated ${codeChanges.length} file changes`);
 
-    // Step 5: Commit and push
-    console.log('   📤 Committing and pushing...');
-    const gitResult = commitAndPush(ticket.ticketKey, ticket.summary, appliedFiles);
+    // Step 4: Commit to GitHub via API
+    console.log('   📤 Committing to GitHub...');
+    const commitResult = await commitToGitHub(
+      ticket.ticketKey,
+      ticket.summary,
+      codeChanges
+    );
 
-    console.log(`   ✅ Implementation complete: ${appliedFiles.length} files changed`);
+    if (!commitResult.success) {
+      return { success: false, filesChanged: [], error: commitResult.error };
+    }
+
+    const filesChanged = codeChanges.map(c => c.filePath);
+    console.log(`   ✅ Committed: ${commitResult.commitUrl}`);
 
     return {
       success: true,
-      filesChanged: appliedFiles,
-      commitSha: gitResult.sha,
-      commitUrl: gitResult.url,
+      filesChanged,
+      commitSha: commitResult.sha,
+      commitUrl: commitResult.commitUrl,
     };
 
   } catch (error) {
-    console.error('   ❌ Implementation failed:', error);
-    return {
-      success: false,
-      filesChanged: [],
-      error: error instanceof Error ? error.message : 'Unknown error',
-    };
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error('   ❌ Implementation failed:', errorMsg);
+    return { success: false, filesChanged: [], error: errorMsg };
   }
 }
 
 /**
- * Analyze the codebase to understand its structure
+ * Fetch key files from GitHub to understand codebase
  */
-async function analyzeCodebase(): Promise<string> {
-  const context: string[] = [];
-
-  // Read key files to understand the codebase
+async function fetchCodebaseFromGitHub(): Promise<string> {
   const keyFiles = [
-    'types.ts',
-    'components/ItemCard.tsx',
-    'components/ItemList.tsx',
-    'app/page.tsx',
-    'lib/storage.ts',
+    'web-ui/types.ts',
+    'web-ui/components/ItemCard.tsx',
+    'web-ui/components/ItemList.tsx',
+    'web-ui/app/page.tsx',
   ];
 
-  for (const file of keyFiles) {
-    const filePath = join(PROJECT_ROOT, file);
-    if (existsSync(filePath)) {
-      const content = readFileSync(filePath, 'utf-8');
-      // Get first 100 lines to understand structure
-      const preview = content.split('\n').slice(0, 100).join('\n');
-      context.push(`=== ${file} ===\n${preview}\n`);
+  const context: string[] = [];
+
+  for (const filePath of keyFiles) {
+    try {
+      const response = await fetch(
+        `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${filePath}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${GITHUB_TOKEN}`,
+            'Accept': 'application/vnd.github.v3.raw',
+          },
+        }
+      );
+
+      if (response.ok) {
+        const content = await response.text();
+        // Get first 80 lines
+        const preview = content.split('\n').slice(0, 80).join('\n');
+        context.push(`=== ${filePath} ===\n${preview}`);
+      }
+    } catch (e) {
+      console.log(`   Could not fetch ${filePath}`);
     }
   }
 
@@ -147,7 +147,7 @@ async function analyzeCodebase(): Promise<string> {
 }
 
 /**
- * Generate an implementation plan using AI
+ * Generate implementation plan
  */
 async function generateImplementationPlan(
   openai: OpenAI,
@@ -159,37 +159,30 @@ async function generateImplementationPlan(
     messages: [
       {
         role: 'system',
-        content: `You are a senior software engineer implementing features for a Next.js/React application called "Content Saver".
+        content: `You are implementing features for a Next.js/React app called "Content Saver".
+        
+The app structure:
+- web-ui/types.ts: ContentItem interface and types
+- web-ui/components/ItemCard.tsx: Individual item display
+- web-ui/components/ItemList.tsx: List of items with selection
+- web-ui/app/page.tsx: Main page with state management
 
-The app saves notes and links with the following structure:
-- types.ts: Contains ContentItem interface
-- components/: React components (ItemCard, ItemList, etc.)
-- app/page.tsx: Main page component
-- lib/storage.ts: Storage logic
-
-Create a detailed implementation plan that lists:
-1. Which files need to be modified
-2. What changes need to be made in each file
-3. The order of changes
-
-Be specific and practical. Only suggest changes that are necessary for the feature.`,
+Create a specific implementation plan listing which files to modify and what changes.`,
       },
       {
         role: 'user',
-        content: `Implement this feature:
+        content: `Feature: ${ticket.ticketKey} - ${ticket.summary}
 
-Ticket: ${ticket.ticketKey}
-Summary: ${ticket.summary}
 Description:
 ${ticket.description}
 
 Acceptance Criteria:
 ${ticket.acceptanceCriteria.map(c => `- ${c}`).join('\n')}
 
-Current Codebase (key files):
+Current Code:
 ${codebaseContext}
 
-Provide a step-by-step implementation plan.`,
+Create an implementation plan.`,
       },
     ],
     max_tokens: 1500,
@@ -199,7 +192,7 @@ Provide a step-by-step implementation plan.`,
 }
 
 /**
- * Generate actual code changes using AI
+ * Generate code changes
  */
 async function generateCodeChanges(
   openai: OpenAI,
@@ -212,122 +205,211 @@ async function generateCodeChanges(
     messages: [
       {
         role: 'system',
-        content: `You are a code generator. Based on the implementation plan, generate the actual code changes.
+        content: `Generate code changes as a JSON object with a "changes" array.
 
-Return a JSON array of changes with this structure:
-[
-  {
-    "filePath": "relative/path/to/file.tsx",
-    "action": "modify" or "create",
-    "content": "FULL file content after changes",
-    "description": "What was changed"
-  }
-]
+Each change must have:
+- filePath: path like "web-ui/types.ts"
+- action: "modify" or "create"
+- content: COMPLETE file content
+- description: what changed
 
-IMPORTANT:
-- Return ONLY valid JSON, no markdown or explanation
-- For "modify" actions, include the COMPLETE file content
-- Use TypeScript/React best practices
-- Keep existing functionality intact when modifying`,
+Return ONLY valid JSON like: {"changes": [...]}`,
       },
       {
         role: 'user',
-        content: `Generate code changes for:
+        content: `Generate code for: ${ticket.ticketKey} - ${ticket.summary}
 
-Ticket: ${ticket.ticketKey} - ${ticket.summary}
-
-Implementation Plan:
+Plan:
 ${plan}
 
-Current Codebase:
+Current files:
 ${codebaseContext}
 
-Return only the JSON array of changes.`,
+Return JSON with "changes" array.`,
       },
     ],
-    max_tokens: 4000,
+    max_tokens: 8000,
     response_format: { type: 'json_object' },
   });
 
   try {
-    const content = response.choices[0]?.message?.content || '{}';
+    const content = response.choices[0]?.message?.content || '{"changes":[]}';
+    console.log('   Raw AI response length:', content.length);
+    
     const parsed = JSON.parse(content);
-    return parsed.changes || parsed || [];
+    
+    // Handle different response formats
+    let changes: CodeChange[] = [];
+    if (Array.isArray(parsed)) {
+      changes = parsed;
+    } else if (parsed.changes && Array.isArray(parsed.changes)) {
+      changes = parsed.changes;
+    } else if (parsed.files && Array.isArray(parsed.files)) {
+      changes = parsed.files;
+    }
+
+    // Validate changes
+    changes = changes.filter(c => c && c.filePath && c.content);
+    
+    return changes;
   } catch (error) {
-    console.error('Failed to parse code changes:', error);
+    console.error('   Failed to parse AI response:', error);
     return [];
   }
 }
 
 /**
- * Apply code changes to the filesystem
+ * Commit changes to GitHub via API
  */
-function applyCodeChanges(changes: CodeChange[]): string[] {
-  const appliedFiles: string[] = [];
-
-  for (const change of changes) {
-    try {
-      const filePath = join(PROJECT_ROOT, change.filePath);
-      writeFileSync(filePath, change.content, 'utf-8');
-      appliedFiles.push(change.filePath);
-      console.log(`      ✅ ${change.action}: ${change.filePath}`);
-    } catch (error) {
-      console.error(`      ❌ Failed to apply ${change.filePath}:`, error);
-    }
-  }
-
-  return appliedFiles;
-}
-
-/**
- * Commit and push changes to GitHub
- */
-function commitAndPush(
+async function commitToGitHub(
   ticketKey: string,
   summary: string,
-  files: string[]
-): { sha: string; url: string } {
+  changes: CodeChange[]
+): Promise<{ success: boolean; sha?: string; commitUrl?: string; error?: string }> {
   try {
-    // Stage files
-    for (const file of files) {
-      execSync(`git add "${file}"`, { cwd: PROJECT_ROOT, stdio: 'pipe' });
+    // Get current commit SHA
+    const refResponse = await fetch(
+      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/git/ref/heads/${GITHUB_BRANCH}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${GITHUB_TOKEN}`,
+          'Accept': 'application/vnd.github.v3+json',
+        },
+      }
+    );
+    
+    if (!refResponse.ok) {
+      return { success: false, error: 'Failed to get branch ref' };
+    }
+    
+    const refData = await refResponse.json();
+    const baseSha = refData.object.sha;
+
+    // Get base tree
+    const baseCommitResponse = await fetch(
+      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/git/commits/${baseSha}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${GITHUB_TOKEN}`,
+          'Accept': 'application/vnd.github.v3+json',
+        },
+      }
+    );
+    
+    const baseCommit = await baseCommitResponse.json();
+    const baseTreeSha = baseCommit.tree.sha;
+
+    // Create blobs for each file
+    const treeItems = [];
+    for (const change of changes) {
+      const blobResponse = await fetch(
+        `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/git/blobs`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${GITHUB_TOKEN}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            content: change.content,
+            encoding: 'utf-8',
+          }),
+        }
+      );
+      
+      if (!blobResponse.ok) {
+        console.error(`Failed to create blob for ${change.filePath}`);
+        continue;
+      }
+      
+      const blob = await blobResponse.json();
+      treeItems.push({
+        path: change.filePath,
+        mode: '100644',
+        type: 'blob',
+        sha: blob.sha,
+      });
     }
 
-    // Commit
-    const commitMessage = `feat(${ticketKey}): ${summary}\n\nAI-implemented feature based on Jira ticket requirements.\n\nFiles changed:\n${files.map(f => `- ${f}`).join('\n')}`;
-    execSync(`git commit -m "${commitMessage.replace(/"/g, '\\"')}"`, {
-      cwd: PROJECT_ROOT,
-      stdio: 'pipe',
-    });
+    if (treeItems.length === 0) {
+      return { success: false, error: 'No files to commit' };
+    }
 
-    // Get commit SHA
-    const sha = execSync('git rev-parse HEAD', { cwd: PROJECT_ROOT, encoding: 'utf-8' }).trim();
+    // Create new tree
+    const treeResponse = await fetch(
+      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/git/trees`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${GITHUB_TOKEN}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          base_tree: baseTreeSha,
+          tree: treeItems,
+        }),
+      }
+    );
+    
+    const tree = await treeResponse.json();
 
-    // Push
-    execSync('git push', { cwd: PROJECT_ROOT, stdio: 'pipe' });
+    // Create commit
+    const commitMessage = `feat(${ticketKey}): ${summary}\n\n🤖 AI-implemented feature\n\nFiles:\n${changes.map(c => `- ${c.filePath}`).join('\n')}`;
+    
+    const commitResponse = await fetch(
+      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/git/commits`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${GITHUB_TOKEN}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: commitMessage,
+          tree: tree.sha,
+          parents: [baseSha],
+        }),
+      }
+    );
+    
+    const commit = await commitResponse.json();
 
-    // Get remote URL for commit link
-    const remoteUrl = execSync('git remote get-url origin', { cwd: PROJECT_ROOT, encoding: 'utf-8' }).trim();
-    const repoUrl = remoteUrl.replace('.git', '').replace('git@github.com:', 'https://github.com/');
-    const commitUrl = `${repoUrl}/commit/${sha}`;
+    // Update branch reference
+    await fetch(
+      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/git/refs/heads/${GITHUB_BRANCH}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${GITHUB_TOKEN}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sha: commit.sha,
+        }),
+      }
+    );
 
-    return { sha, url: commitUrl };
+    return {
+      success: true,
+      sha: commit.sha,
+      commitUrl: `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/commit/${commit.sha}`,
+    };
+
   } catch (error) {
-    console.error('Git operation failed:', error);
-    return { sha: '', url: '' };
+    return { success: false, error: error instanceof Error ? error.message : 'Git commit failed' };
   }
 }
 
 /**
- * Wait for Vercel deployment to complete
+ * Wait for deployment
  */
 export async function waitForDeployment(commitSha: string, timeoutMs: number = 60000): Promise<boolean> {
   console.log('   ⏳ Waiting for Vercel deployment...');
-  
-  // Simple wait - Vercel typically deploys in 30-60 seconds
-  const waitTime = Math.min(timeoutMs, 45000);
-  await new Promise(resolve => setTimeout(resolve, waitTime));
-  
+  await new Promise(resolve => setTimeout(resolve, Math.min(timeoutMs, 45000)));
   console.log('   ✅ Deployment wait complete');
   return true;
 }
