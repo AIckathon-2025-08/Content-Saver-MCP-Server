@@ -1,5 +1,7 @@
 /**
  * Shared types for Web UI (matches MCP server types)
+ * 
+ * KAN-3: Added metadata fields for auto-fetched webpage data
  */
 export interface ContentItem {
   id: string;
@@ -10,6 +12,10 @@ export interface ContentItem {
   tags: string[];
   createdAt: string;
   updatedAt?: string;
+  // KAN-3: Auto-fetched webpage metadata
+  favicon?: string;
+  ogImage?: string;
+  siteName?: string;
 }
 
 export interface SaveNoteInput {

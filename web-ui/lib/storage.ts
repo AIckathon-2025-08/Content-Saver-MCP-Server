@@ -1,11 +1,14 @@
 /**
  * Standalone Storage implementation for web-ui
  * Used when MCP server is not available (e.g., on Vercel)
+ * 
+ * KAN-3: Auto-fetches webpage metadata when saving links
  */
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { ContentItem, SaveResult, UpdateResult } from '../types';
+import { fetchWebpageMetadata } from './metadata-fetcher';
 
 // Use /tmp on Vercel (writable), or .content-saver in project root for local dev
 const getStoragePath = () => {
@@ -121,6 +124,8 @@ export class Storage {
   /**
    * Save an item (note or link)
    * Compatible with MCP client saveItem interface
+   * 
+   * KAN-3: For links, automatically fetches webpage metadata if not provided
    */
   async saveItem(item: {
     type: 'note' | 'link';
@@ -128,6 +133,7 @@ export class Storage {
     body?: string;
     url?: string;
     tags?: string[];
+    skipMetadataFetch?: boolean; // Skip auto-fetch if metadata already provided
   }): Promise<SaveResult> {
     // For links, check for duplicates
     if (item.type === 'link' && item.url) {
@@ -159,9 +165,34 @@ export class Storage {
           isDuplicate: true,
         };
       }
+      
+      // KAN-3: Auto-fetch metadata for new links if not already provided
+      if (!item.skipMetadataFetch && (!item.title || !item.body)) {
+        try {
+          console.log(`🔗 KAN-3: Auto-fetching metadata for ${item.url}`);
+          const metadata = await fetchWebpageMetadata(item.url);
+          
+          // Use fetched metadata if not already provided
+          if (!item.title && metadata.title) {
+            item.title = metadata.title;
+            console.log(`   📄 Title: ${metadata.title}`);
+          }
+          if (!item.body && metadata.description) {
+            item.body = metadata.description;
+            console.log(`   📝 Description: ${metadata.description?.substring(0, 50)}...`);
+          }
+          
+          // Store additional metadata in the item (favicon, ogImage)
+          // These will be added to the item below
+          (item as any)._metadata = metadata;
+        } catch (error) {
+          console.warn(`⚠️ Failed to fetch metadata for ${item.url}:`, error);
+        }
+      }
     }
 
-    // Create new item
+    // Create new item with fetched metadata
+    const metadata = (item as any)._metadata || {};
     const newItem: ContentItem = {
       id: this.generateId(),
       type: item.type,
@@ -170,6 +201,10 @@ export class Storage {
       url: item.url?.trim(),
       tags: (item.tags || []).map((t) => t.toLowerCase().trim()).filter((t) => t.length > 0),
       createdAt: new Date().toISOString(),
+      // KAN-3: Store additional metadata
+      ...(metadata.favicon && { favicon: metadata.favicon }),
+      ...(metadata.ogImage && { ogImage: metadata.ogImage }),
+      ...(metadata.siteName && { siteName: metadata.siteName }),
     };
 
     this.items.push(newItem);
