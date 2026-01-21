@@ -49,24 +49,35 @@ export async function implementFeature(ticket: TicketRequirements): Promise<Impl
   console.log(`\n🤖 AI IMPLEMENTER: ${ticket.ticketKey}`);
   
   const openaiKey = process.env.OPENAI_API_KEY;
+  const githubToken = process.env.GITHUB_TOKEN || GITHUB_TOKEN;
+  
+  console.log(`   OpenAI key configured: ${openaiKey ? 'Yes' : 'No'}`);
+  console.log(`   GitHub token configured: ${githubToken ? 'Yes' : 'No'}`);
+  
   if (!openaiKey) {
     return { success: false, filesChanged: [], error: 'OPENAI_API_KEY not configured' };
   }
 
-  if (!GITHUB_TOKEN) {
+  if (!githubToken) {
     return { success: false, filesChanged: [], error: 'GITHUB_TOKEN not configured' };
   }
 
   try {
-    const openai = new OpenAI({ apiKey: openaiKey });
+    console.log('   Creating OpenAI client...');
+    const openai = new OpenAI({ 
+      apiKey: openaiKey,
+      timeout: 30000, // 30 second timeout
+    });
 
     // Step 1: Get codebase context from GitHub
     console.log('   📁 Fetching codebase from GitHub...');
     const codebaseContext = await fetchCodebaseFromGitHub();
+    console.log(`   Codebase context length: ${codebaseContext.length} chars`);
 
     // Step 2: Generate implementation plan
     console.log('   🧠 Generating implementation plan...');
     const plan = await generateImplementationPlan(openai, ticket, codebaseContext);
+    console.log(`   Plan length: ${plan.length} chars`);
 
     // Step 3: Generate code changes
     console.log('   💻 Generating code changes...');
@@ -101,8 +112,11 @@ export async function implementFeature(ticket: TicketRequirements): Promise<Impl
     };
 
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
+    const errorMsg = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
     console.error('   ❌ Implementation failed:', errorMsg);
+    if (error instanceof Error && error.stack) {
+      console.error('   Stack:', error.stack.split('\n').slice(0, 3).join('\n'));
+    }
     return { success: false, filesChanged: [], error: errorMsg };
   }
 }
