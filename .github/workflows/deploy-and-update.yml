@@ -1,0 +1,231 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# 🚀 Production Deployment & Jira/Confluence Automation
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# This workflow:
+# 1. Deploys to Vercel on push to main
+# 2. Extracts Jira ticket IDs from commit messages
+# 3. Moves tickets to "Done" status
+# 4. Creates release notes in Confluence
+# 5. Adds deployment URL comment to Jira tickets
+#
+# ═══════════════════════════════════════════════════════════════════════════
+
+name: Deploy & Update Jira/Confluence
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'web-ui/**'
+      - 'src/**'
+      - '.github/workflows/**'
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+jobs:
+  deploy:
+    name: 🚀 Deploy to Production
+    runs-on: ubuntu-latest
+    outputs:
+      deployment_url: ${{ steps.deploy.outputs.url }}
+      ticket_ids: ${{ steps.extract.outputs.tickets }}
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 10  # Get recent commits for ticket extraction
+
+      - name: 🔍 Extract Jira Ticket IDs from commits
+        id: extract
+        run: |
+          # Extract KAN-X patterns from recent commits
+          TICKETS=$(git log --oneline -10 | grep -oE 'KAN-[0-9]+' | sort -u | tr '\n' ',' | sed 's/,$//')
+          echo "Found tickets: $TICKETS"
+          echo "tickets=$TICKETS" >> $GITHUB_OUTPUT
+
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web-ui/package-lock.json
+
+      - name: 📥 Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: 🔧 Pull Vercel Environment
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: web-ui
+
+      - name: 🏗️ Build Project
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: web-ui
+
+      - name: 🚀 Deploy to Vercel
+        id: deploy
+        run: |
+          URL=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+          echo "Deployed to: $URL"
+          echo "url=$URL" >> $GITHUB_OUTPUT
+        working-directory: web-ui
+
+      - name: ✅ Deployment Summary
+        run: |
+          echo "## 🚀 Deployment Successful!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** ${{ steps.deploy.outputs.url }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tickets:** ${{ steps.extract.outputs.tickets }}" >> $GITHUB_STEP_SUMMARY
+
+  update-jira:
+    name: 📋 Update Jira Tickets
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: needs.deploy.outputs.ticket_ids != ''
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔄 Move Tickets to Done & Add Comment
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          DEPLOYMENT_URL: ${{ needs.deploy.outputs.deployment_url }}
+          TICKETS: ${{ needs.deploy.outputs.ticket_ids }}
+        run: |
+          # Process each ticket
+          IFS=',' read -ra TICKET_ARRAY <<< "$TICKETS"
+          
+          for TICKET in "${TICKET_ARRAY[@]}"; do
+            echo "Processing ticket: $TICKET"
+            
+            # Get available transitions
+            TRANSITIONS=$(curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+              -H "Accept: application/json" \
+              "$JIRA_BASE_URL/rest/api/3/issue/$TICKET/transitions")
+            
+            # Find "Done" transition ID
+            DONE_ID=$(echo "$TRANSITIONS" | jq -r '.transitions[] | select(.name=="Done") | .id')
+            
+            if [ -n "$DONE_ID" ] && [ "$DONE_ID" != "null" ]; then
+              # Transition to Done
+              curl -s -X POST \
+                -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "{\"transition\": {\"id\": \"$DONE_ID\"}}" \
+                "$JIRA_BASE_URL/rest/api/3/issue/$TICKET/transitions"
+              
+              echo "✅ $TICKET moved to Done"
+            else
+              echo "⚠️ $TICKET already Done or transition not available"
+            fi
+            
+            # Add deployment comment
+            curl -s -X POST \
+              -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"body\": {
+                  \"type\": \"doc\",
+                  \"version\": 1,
+                  \"content\": [
+                    {
+                      \"type\": \"paragraph\",
+                      \"content\": [
+                        {\"type\": \"text\", \"text\": \"🚀 Deployed to production: \"},
+                        {\"type\": \"text\", \"text\": \"$DEPLOYMENT_URL\", \"marks\": [{\"type\": \"link\", \"attrs\": {\"href\": \"$DEPLOYMENT_URL\"}}]}
+                      ]
+                    },
+                    {
+                      \"type\": \"paragraph\",
+                      \"content\": [
+                        {\"type\": \"text\", \"text\": \"Commit: ${{ github.sha }}\"}
+                      ]
+                    }
+                  ]
+                }
+              }" \
+              "$JIRA_BASE_URL/rest/api/3/issue/$TICKET/comment"
+            
+            echo "✅ Comment added to $TICKET"
+          done
+
+  create-release-notes:
+    name: 📝 Create Confluence Release Notes
+    needs: [deploy, update-jira]
+    runs-on: ubuntu-latest
+    if: needs.deploy.outputs.ticket_ids != ''
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 📄 Create Release Notes in Confluence
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          CONFLUENCE_SPACE_ID: ${{ secrets.CONFLUENCE_SPACE_ID }}
+          DEPLOYMENT_URL: ${{ needs.deploy.outputs.deployment_url }}
+          TICKETS: ${{ needs.deploy.outputs.ticket_ids }}
+        run: |
+          # Get current date
+          RELEASE_DATE=$(date +"%B %d, %Y")
+          RELEASE_TITLE="Release Notes - $(date +"%Y-%m-%d %H:%M")"
+          
+          # Build ticket list HTML
+          TICKET_HTML=""
+          IFS=',' read -ra TICKET_ARRAY <<< "$TICKETS"
+          
+          for TICKET in "${TICKET_ARRAY[@]}"; do
+            # Get ticket details
+            TICKET_DATA=$(curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+              -H "Accept: application/json" \
+              "$JIRA_BASE_URL/rest/api/3/issue/$TICKET?fields=summary,issuetype")
+            
+            SUMMARY=$(echo "$TICKET_DATA" | jq -r '.fields.summary // "No summary"')
+            TYPE=$(echo "$TICKET_DATA" | jq -r '.fields.issuetype.name // "Task"')
+            
+            TICKET_HTML="$TICKET_HTML<tr><td><a href=\"$JIRA_BASE_URL/browse/$TICKET\">$TICKET</a></td><td>$TYPE</td><td>$SUMMARY</td><td>✅ Done</td></tr>"
+          done
+          
+          # Create Confluence page
+          PAGE_CONTENT=$(cat <<EOF
+          {
+            "spaceId": "$CONFLUENCE_SPACE_ID",
+            "status": "current",
+            "title": "$RELEASE_TITLE",
+            "body": {
+              "representation": "storage",
+              "value": "<h1>🚀 Production Release</h1><p><strong>Release Date:</strong> $RELEASE_DATE<br/><strong>Deployment URL:</strong> <a href=\"$DEPLOYMENT_URL\">$DEPLOYMENT_URL</a><br/><strong>Commit:</strong> ${{ github.sha }}</p><hr/><h2>📋 Tickets Included</h2><table><tr><th>Ticket</th><th>Type</th><th>Summary</th><th>Status</th></tr>$TICKET_HTML</table><hr/><h2>🔗 Links</h2><ul><li><a href=\"$DEPLOYMENT_URL\">Production App</a></li><li><a href=\"https://github.com/${{ github.repository }}/commit/${{ github.sha }}\">GitHub Commit</a></li></ul>"
+            }
+          }
+          EOF
+          )
+          
+          # Create the page
+          RESPONSE=$(curl -s -X POST \
+            -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
+            -d "$PAGE_CONTENT" \
+            "$JIRA_BASE_URL/../wiki/api/v2/pages")
+          
+          PAGE_ID=$(echo "$RESPONSE" | jq -r '.id // "error"')
+          
+          if [ "$PAGE_ID" != "error" ] && [ "$PAGE_ID" != "null" ]; then
+            echo "✅ Confluence page created: $JIRA_BASE_URL/../wiki/spaces/MFS/pages/$PAGE_ID"
+            echo "## 📝 Release Notes Created" >> $GITHUB_STEP_SUMMARY
+            echo "Page ID: $PAGE_ID" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Failed to create Confluence page"
+            echo "$RESPONSE"
+          fi
+
