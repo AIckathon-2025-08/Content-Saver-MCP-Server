@@ -1,14 +1,21 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// 🤖 AI-DRIVEN AUTOMATION PIPELINE
+// 🤖 AUTOMATION PIPELINE - HONEST VERSION
 // ═══════════════════════════════════════════════════════════════════════════
 //
-// Full automation when a Jira ticket moves to "In Progress":
-// 1. Fetch ticket details from Jira
-// 2. Parse requirements from description
-// 3. Generate implementation using AI
-// 4. Deploy to production (via Vercel)
-// 5. Transition Jira ticket to "Done"
-// 6. Create Confluence release note
+// This pipeline is triggered when a Jira ticket moves to "In Progress"
+// 
+// WHAT IT DOES:
+// 1. Fetches ticket details from Jira
+// 2. Parses requirements from description
+// 3. Logs the work item for tracking
+// 4. Returns guidance on what needs to be implemented
+//
+// WHAT IT DOES NOT DO:
+// ❌ Auto-implement features (requires manual implementation)
+// ❌ Auto-transition to "Done" (must verify implementation first)
+// ❌ Auto-create Confluence notes (only after actual deployment)
+//
+// To complete a ticket, use: completeTicketAfterImplementation()
 //
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -30,96 +37,175 @@ interface TicketData {
   description: string;
   issueType: string;
   assignee?: string;
+  acceptanceCriteria: string[];
 }
 
-interface PipelineResult {
+interface WorkStartedResult {
+  success: boolean;
+  ticketKey: string;
+  summary: string;
+  acceptanceCriteria: string[];
+  suggestedBranch: string;
+  message: string;
+  nextSteps: string[];
+}
+
+interface CompletionResult {
   success: boolean;
   ticketKey: string;
   steps: {
-    fetchTicket: boolean;
-    parseRequirements: boolean;
-    generateCode: boolean;
-    deploy: boolean;
+    verifyImplementation: boolean;
     updateJira: boolean;
     createConfluence: boolean;
   };
-  implementationSummary?: string;
   deploymentUrl?: string;
   confluenceUrl?: string;
   error?: string;
 }
 
 /**
- * Execute the full automation pipeline
+ * Called when a ticket moves to "In Progress"
+ * Does NOT auto-implement or auto-complete - just logs and returns guidance
  */
-export async function executeAutomationPipeline(ticketKey: string): Promise<PipelineResult> {
+export async function executeAutomationPipeline(ticketKey: string): Promise<WorkStartedResult> {
   console.log(`\n${'='.repeat(60)}`);
-  console.log(`🤖 AUTOMATION PIPELINE STARTED: ${ticketKey}`);
+  console.log(`🚀 WORK STARTED: ${ticketKey}`);
   console.log(`${'='.repeat(60)}\n`);
 
-  const result: PipelineResult = {
+  try {
+    // Step 1: Fetch ticket details from Jira
+    console.log('📋 Fetching ticket details from Jira...');
+    const ticket = await fetchJiraTicket(ticketKey);
+    console.log(`   ✅ Ticket: ${ticket.summary}`);
+
+    // Step 2: Parse requirements
+    console.log('\n📝 Parsing requirements...');
+    const requirements = parseRequirements(ticket.description);
+    ticket.acceptanceCriteria = requirements;
+    console.log(`   ✅ Found ${requirements.length} acceptance criteria`);
+
+    // Step 3: Generate branch name
+    const branchName = generateBranchName(ticketKey, ticket.summary);
+
+    // Step 4: Log and return guidance
+    console.log(`\n✅ Work item logged. Ready for implementation.`);
+    console.log(`   Branch: ${branchName}`);
+
+    return {
+      success: true,
+      ticketKey,
+      summary: ticket.summary,
+      acceptanceCriteria: requirements,
+      suggestedBranch: branchName,
+      message: `Ticket ${ticketKey} is now In Progress. Awaiting implementation.`,
+      nextSteps: [
+        `1. Create branch: git checkout -b ${branchName}`,
+        `2. Implement the feature based on acceptance criteria`,
+        `3. Commit with message including ${ticketKey}`,
+        `4. Push and deploy to production`,
+        `5. Call /api/webhooks/jira/complete?ticket=${ticketKey} to finish`,
+      ],
+    };
+
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`\n❌ Failed to process ticket: ${errorMsg}`);
+    
+    return {
+      success: false,
+      ticketKey,
+      summary: '',
+      acceptanceCriteria: [],
+      suggestedBranch: '',
+      message: `Failed to process ${ticketKey}: ${errorMsg}`,
+      nextSteps: [],
+    };
+  }
+}
+
+/**
+ * Called AFTER a feature is actually implemented and deployed
+ * This is what transitions to "Done" and creates Confluence notes
+ */
+export async function completeTicketAfterImplementation(
+  ticketKey: string,
+  implementationDetails: {
+    filesChanged: string[];
+    commitUrl?: string;
+    implementationSummary?: string;
+  }
+): Promise<CompletionResult> {
+  console.log(`\n${'='.repeat(60)}`);
+  console.log(`✅ COMPLETING TICKET: ${ticketKey}`);
+  console.log(`${'='.repeat(60)}\n`);
+
+  const result: CompletionResult = {
     success: false,
     ticketKey,
     steps: {
-      fetchTicket: false,
-      parseRequirements: false,
-      generateCode: false,
-      deploy: false,
+      verifyImplementation: false,
       updateJira: false,
       createConfluence: false,
     },
   };
 
   try {
-    // Step 1: Fetch ticket details from Jira
-    console.log('📋 Step 1: Fetching ticket details from Jira...');
+    // Step 1: Verify implementation details provided
+    if (!implementationDetails.filesChanged || implementationDetails.filesChanged.length === 0) {
+      throw new Error('No files changed provided - implementation not verified');
+    }
+    result.steps.verifyImplementation = true;
+    console.log(`   ✅ Implementation verified: ${implementationDetails.filesChanged.length} files changed`);
+
+    // Step 2: Fetch ticket details
     const ticket = await fetchJiraTicket(ticketKey);
-    result.steps.fetchTicket = true;
-    console.log(`   ✅ Ticket: ${ticket.summary}`);
 
-    // Step 2: Parse requirements
-    console.log('\n📝 Step 2: Parsing requirements...');
-    const requirements = parseRequirements(ticket.description);
-    result.steps.parseRequirements = true;
-    console.log(`   ✅ Found ${requirements.length} requirements`);
-
-    // Step 3: Generate implementation summary (AI analysis)
-    console.log('\n🧠 Step 3: Analyzing with AI...');
-    const implementation = await analyzeWithAI(ticket, requirements);
-    result.steps.generateCode = true;
-    result.implementationSummary = implementation;
-    console.log(`   ✅ Implementation plan generated`);
-
-    // Step 4: Mark as deployed (Vercel auto-deploys on push)
-    console.log('\n🚀 Step 4: Deployment...');
-    result.deploymentUrl = 'https://web-ui-sable-pi.vercel.app';
-    result.steps.deploy = true;
-    console.log(`   ✅ Deployed to: ${result.deploymentUrl}`);
-
-    // Step 5: Transition Jira ticket to "Done"
-    console.log('\n✅ Step 5: Updating Jira ticket to Done...');
+    // Step 3: Transition Jira ticket to "Done"
+    console.log('\n📋 Updating Jira ticket to Done...');
     await transitionJiraTicket(ticketKey, 'Done');
     result.steps.updateJira = true;
     console.log(`   ✅ Ticket transitioned to Done`);
 
-    // Step 6: Create Confluence release note
-    console.log('\n📄 Step 6: Creating Confluence release note...');
-    const confluenceResult = await createConfluenceReleaseNote(ticket, implementation);
+    // Step 4: Create Confluence release note
+    console.log('\n📄 Creating Confluence release note...');
+    const summary = implementationDetails.implementationSummary || 
+      `Implemented ${ticket.summary}. Files changed: ${implementationDetails.filesChanged.join(', ')}`;
+    
+    const confluenceResult = await createConfluenceReleaseNote(
+      ticket,
+      summary,
+      implementationDetails
+    );
     result.steps.createConfluence = true;
     result.confluenceUrl = confluenceResult.url;
+    result.deploymentUrl = 'https://web-ui-sable-pi.vercel.app';
     console.log(`   ✅ Release note created: ${confluenceResult.url}`);
 
     result.success = true;
     console.log(`\n${'='.repeat(60)}`);
-    console.log(`🎉 PIPELINE COMPLETED SUCCESSFULLY: ${ticketKey}`);
+    console.log(`🎉 TICKET COMPLETED: ${ticketKey}`);
     console.log(`${'='.repeat(60)}\n`);
 
   } catch (error) {
     result.error = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`\n❌ Pipeline failed: ${result.error}`);
+    console.error(`\n❌ Completion failed: ${result.error}`);
   }
 
   return result;
+}
+
+/**
+ * Generate a Git branch name from ticket
+ */
+function generateBranchName(ticketKey: string, summary: string): string {
+  const cleanSummary = summary
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .substring(0, 40)
+    .replace(/-+$/, '');
+
+  return `feature/${ticketKey.toLowerCase()}-${cleanSummary}`;
 }
 
 /**
@@ -128,9 +214,6 @@ export async function executeAutomationPipeline(ticketKey: string): Promise<Pipe
 async function fetchJiraTicket(ticketKey: string): Promise<TicketData> {
   const config = getConfig();
   const auth = Buffer.from(`${config.JIRA_EMAIL}:${config.JIRA_API_TOKEN}`).toString('base64');
-  
-  console.log(`   Fetching from: ${config.JIRA_BASE_URL}/rest/api/3/issue/${ticketKey}`);
-  console.log(`   Auth configured: ${config.JIRA_API_TOKEN ? 'Yes' : 'No'}`);
   
   const response = await fetch(
     `${config.JIRA_BASE_URL}/rest/api/3/issue/${ticketKey}`,
@@ -143,14 +226,11 @@ async function fetchJiraTicket(ticketKey: string): Promise<TicketData> {
   );
 
   if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`   Jira API error: ${response.status} - ${errorText}`);
     throw new Error(`Failed to fetch Jira ticket: ${response.status}`);
   }
 
   const data = await response.json();
   
-  // Parse description from Atlassian Document Format
   let description = '';
   if (data.fields.description?.content) {
     description = parseAtlassianDoc(data.fields.description.content);
@@ -162,6 +242,7 @@ async function fetchJiraTicket(ticketKey: string): Promise<TicketData> {
     description,
     issueType: data.fields.issuetype.name,
     assignee: data.fields.assignee?.displayName,
+    acceptanceCriteria: [],
   };
 }
 
@@ -191,7 +272,6 @@ function parseRequirements(description: string): string[] {
   const lines = description.split('\n');
   
   for (const line of lines) {
-    // Look for acceptance criteria, user stories, or bullet points
     if (line.includes('- [ ]') || line.includes('* [ ]') || 
         line.startsWith('- ') || line.startsWith('* ') ||
         line.includes('**I want**') || line.includes('**So that**')) {
@@ -203,48 +283,12 @@ function parseRequirements(description: string): string[] {
 }
 
 /**
- * Analyze ticket and generate implementation plan using AI
- */
-async function analyzeWithAI(ticket: TicketData, requirements: string[]): Promise<string> {
-  const openaiKey = process.env.OPENAI_API_KEY;
-  
-  if (!openaiKey) {
-    return `Feature: ${ticket.summary}\n\nRequirements:\n${requirements.map(r => `- ${r}`).join('\n')}`;
-  }
-
-  try {
-    const openai = new OpenAI({ apiKey: openaiKey });
-    
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a technical writer creating concise implementation summaries for release notes. Be brief and focus on what was implemented and the value it provides.',
-        },
-        {
-          role: 'user',
-          content: `Create a brief implementation summary for this feature:\n\nTicket: ${ticket.key}\nSummary: ${ticket.summary}\nDescription:\n${ticket.description}\n\nProvide a 2-3 sentence summary of what was implemented and its value.`,
-        },
-      ],
-      max_tokens: 200,
-    });
-
-    return response.choices[0]?.message?.content || ticket.summary;
-  } catch (error) {
-    console.warn('AI analysis failed, using default summary');
-    return `Implemented ${ticket.summary}. ${requirements.slice(0, 2).join('. ')}.`;
-  }
-}
-
-/**
  * Transition Jira ticket to a new status
  */
 async function transitionJiraTicket(ticketKey: string, targetStatus: string): Promise<void> {
   const config = getConfig();
   const auth = Buffer.from(`${config.JIRA_EMAIL}:${config.JIRA_API_TOKEN}`).toString('base64');
   
-  // Get available transitions
   const transitionsResponse = await fetch(
     `${config.JIRA_BASE_URL}/rest/api/3/issue/${ticketKey}/transitions`,
     {
@@ -268,7 +312,6 @@ async function transitionJiraTicket(ticketKey: string, targetStatus: string): Pr
     throw new Error(`Transition to "${targetStatus}" not available`);
   }
 
-  // Execute transition
   const response = await fetch(
     `${config.JIRA_BASE_URL}/rest/api/3/issue/${ticketKey}/transitions`,
     {
@@ -291,11 +334,14 @@ async function transitionJiraTicket(ticketKey: string, targetStatus: string): Pr
  */
 async function createConfluenceReleaseNote(
   ticket: TicketData,
-  implementation: string
+  implementation: string,
+  implResult: { filesChanged: string[]; commitUrl?: string }
 ): Promise<{ id: string; url: string }> {
   const config = getConfig();
   const auth = Buffer.from(`${config.JIRA_EMAIL}:${config.JIRA_API_TOKEN}`).toString('base64');
   const date = new Date().toISOString().split('T')[0];
+  
+  const filesListHtml = implResult.filesChanged.map(f => `<li><code>${f}</code></li>`).join('');
   
   const body = `<h2>Feature: ${ticket.summary}</h2>
 <p><strong>Ticket:</strong> <a href="${config.JIRA_BASE_URL}/browse/${ticket.key}">${ticket.key}</a></p>
@@ -304,6 +350,9 @@ async function createConfluenceReleaseNote(
 <hr/>
 <h3>Implementation Summary</h3>
 <p>${implementation}</p>
+<h3>Files Changed</h3>
+<ul>${filesListHtml}</ul>
+${implResult.commitUrl ? `<p><strong>Commit:</strong> <a href="${implResult.commitUrl}">${implResult.commitUrl}</a></p>` : ''}
 <h3>Production URL</h3>
 <p><a href="https://web-ui-sable-pi.vercel.app">https://web-ui-sable-pi.vercel.app</a></p>`;
 
@@ -318,7 +367,7 @@ async function createConfluenceReleaseNote(
       body: JSON.stringify({
         spaceId: config.CONFLUENCE_SPACE_ID,
         status: 'current',
-        title: `${ticket.key}: ${ticket.summary} - Deployed`,
+        title: `${ticket.key}: ${ticket.summary} - Deployed ${date}`,
         body: {
           representation: 'storage',
           value: body,
@@ -338,4 +387,3 @@ async function createConfluenceReleaseNote(
     url: `${config.JIRA_BASE_URL}/wiki${data._links?.webui || `/pages/${data.id}`}`,
   };
 }
-
