@@ -49,21 +49,38 @@ export async function POST(request: NextRequest) {
   try {
     const payload: JiraWebhookPayload = await request.json();
     
-    // Verify this is a status change to "In Progress"
-    const statusChange = payload.changelog?.items?.find(
-      item => item.field === 'status' && item.toString === 'In Progress'
-    );
+    console.log('📨 Received Jira webhook payload:', JSON.stringify(payload, null, 2));
     
-    if (!statusChange) {
-      return NextResponse.json({ 
-        message: 'Not an In Progress transition, ignoring' 
-      });
+    // Handle both formats:
+    // 1. Direct issue data from "Send web request" action (no changelog)
+    // 2. Full webhook event with changelog
+    
+    // Check if we have a changelog (full webhook format)
+    const hasChangelog = payload.changelog?.items?.length > 0;
+    
+    if (hasChangelog) {
+      // Verify this is a status change to "In Progress"
+      const statusChange = payload.changelog?.items?.find(
+        item => item.field === 'status' && item.toString === 'In Progress'
+      );
+      
+      if (!statusChange) {
+        return NextResponse.json({ 
+          success: true,
+          message: 'Not an In Progress transition, ignoring' 
+        });
+      }
     }
-
-    const issueKey = payload.issue?.key;
-    const summary = payload.issue?.fields?.summary || 'No summary';
-    const assignee = payload.issue?.fields?.assignee?.displayName || 'Unassigned';
-    const triggeredBy = payload.user?.displayName || 'Unknown';
+    
+    // For "Send web request" format, the payload IS the issue data
+    // For webhook format, the issue is nested under payload.issue
+    const issueData = payload.issue || payload as any;
+    const fields = issueData.fields || issueData;
+    
+    const issueKey = issueData.key || payload.issue?.key || 'UNKNOWN';
+    const summary = fields.summary || 'No summary';
+    const assignee = fields.assignee?.displayName || 'Unassigned';
+    const triggeredBy = payload.user?.displayName || 'Automation';
 
     console.log(`🚀 Ticket ${issueKey} moved to In Progress`);
     console.log(`   Summary: ${summary}`);
