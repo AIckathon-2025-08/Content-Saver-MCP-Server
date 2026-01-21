@@ -14,11 +14,15 @@
 
 import OpenAI from 'openai';
 
-// Configuration from environment
-const JIRA_BASE_URL = process.env.JIRA_BASE_URL || 'https://agorozia1.atlassian.net';
-const JIRA_EMAIL = process.env.JIRA_EMAIL || 'agorozia1@gmail.com';
-const JIRA_API_TOKEN = process.env.JIRA_API_TOKEN || '';
-const CONFLUENCE_SPACE_ID = process.env.CONFLUENCE_SPACE_ID || '262148';
+// Get configuration from environment (read at runtime, not module load)
+function getConfig() {
+  return {
+    JIRA_BASE_URL: process.env.JIRA_BASE_URL || 'https://agorozia1.atlassian.net',
+    JIRA_EMAIL: process.env.JIRA_EMAIL || 'agorozia1@gmail.com',
+    JIRA_API_TOKEN: process.env.JIRA_API_TOKEN || '',
+    CONFLUENCE_SPACE_ID: process.env.CONFLUENCE_SPACE_ID || '262148',
+  };
+}
 
 interface TicketData {
   key: string;
@@ -122,10 +126,14 @@ export async function executeAutomationPipeline(ticketKey: string): Promise<Pipe
  * Fetch ticket details from Jira API
  */
 async function fetchJiraTicket(ticketKey: string): Promise<TicketData> {
-  const auth = Buffer.from(`${JIRA_EMAIL}:${JIRA_API_TOKEN}`).toString('base64');
+  const config = getConfig();
+  const auth = Buffer.from(`${config.JIRA_EMAIL}:${config.JIRA_API_TOKEN}`).toString('base64');
+  
+  console.log(`   Fetching from: ${config.JIRA_BASE_URL}/rest/api/3/issue/${ticketKey}`);
+  console.log(`   Auth configured: ${config.JIRA_API_TOKEN ? 'Yes' : 'No'}`);
   
   const response = await fetch(
-    `${JIRA_BASE_URL}/rest/api/3/issue/${ticketKey}`,
+    `${config.JIRA_BASE_URL}/rest/api/3/issue/${ticketKey}`,
     {
       headers: {
         'Authorization': `Basic ${auth}`,
@@ -135,6 +143,8 @@ async function fetchJiraTicket(ticketKey: string): Promise<TicketData> {
   );
 
   if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`   Jira API error: ${response.status} - ${errorText}`);
     throw new Error(`Failed to fetch Jira ticket: ${response.status}`);
   }
 
@@ -231,11 +241,12 @@ async function analyzeWithAI(ticket: TicketData, requirements: string[]): Promis
  * Transition Jira ticket to a new status
  */
 async function transitionJiraTicket(ticketKey: string, targetStatus: string): Promise<void> {
-  const auth = Buffer.from(`${JIRA_EMAIL}:${JIRA_API_TOKEN}`).toString('base64');
+  const config = getConfig();
+  const auth = Buffer.from(`${config.JIRA_EMAIL}:${config.JIRA_API_TOKEN}`).toString('base64');
   
   // Get available transitions
   const transitionsResponse = await fetch(
-    `${JIRA_BASE_URL}/rest/api/3/issue/${ticketKey}/transitions`,
+    `${config.JIRA_BASE_URL}/rest/api/3/issue/${ticketKey}/transitions`,
     {
       headers: {
         'Authorization': `Basic ${auth}`,
@@ -259,7 +270,7 @@ async function transitionJiraTicket(ticketKey: string, targetStatus: string): Pr
 
   // Execute transition
   const response = await fetch(
-    `${JIRA_BASE_URL}/rest/api/3/issue/${ticketKey}/transitions`,
+    `${config.JIRA_BASE_URL}/rest/api/3/issue/${ticketKey}/transitions`,
     {
       method: 'POST',
       headers: {
@@ -282,11 +293,12 @@ async function createConfluenceReleaseNote(
   ticket: TicketData,
   implementation: string
 ): Promise<{ id: string; url: string }> {
-  const auth = Buffer.from(`${JIRA_EMAIL}:${JIRA_API_TOKEN}`).toString('base64');
+  const config = getConfig();
+  const auth = Buffer.from(`${config.JIRA_EMAIL}:${config.JIRA_API_TOKEN}`).toString('base64');
   const date = new Date().toISOString().split('T')[0];
   
   const body = `<h2>Feature: ${ticket.summary}</h2>
-<p><strong>Ticket:</strong> <a href="${JIRA_BASE_URL}/browse/${ticket.key}">${ticket.key}</a></p>
+<p><strong>Ticket:</strong> <a href="${config.JIRA_BASE_URL}/browse/${ticket.key}">${ticket.key}</a></p>
 <p><strong>Deployed:</strong> ${date}</p>
 <p><strong>Type:</strong> ${ticket.issueType}</p>
 <hr/>
@@ -296,7 +308,7 @@ async function createConfluenceReleaseNote(
 <p><a href="https://web-ui-sable-pi.vercel.app">https://web-ui-sable-pi.vercel.app</a></p>`;
 
   const response = await fetch(
-    `${JIRA_BASE_URL}/wiki/api/v2/blogposts`,
+    `${config.JIRA_BASE_URL}/wiki/api/v2/blogposts`,
     {
       method: 'POST',
       headers: {
@@ -304,7 +316,7 @@ async function createConfluenceReleaseNote(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        spaceId: CONFLUENCE_SPACE_ID,
+        spaceId: config.CONFLUENCE_SPACE_ID,
         status: 'current',
         title: `${ticket.key}: ${ticket.summary} - Deployed`,
         body: {
@@ -323,7 +335,7 @@ async function createConfluenceReleaseNote(
   const data = await response.json();
   return {
     id: data.id,
-    url: `${JIRA_BASE_URL}/wiki${data._links?.webui || `/pages/${data.id}`}`,
+    url: `${config.JIRA_BASE_URL}/wiki${data._links?.webui || `/pages/${data.id}`}`,
   };
 }
 
