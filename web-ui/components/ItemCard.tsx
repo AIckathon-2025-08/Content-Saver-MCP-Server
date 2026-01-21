@@ -10,9 +10,22 @@ interface ItemCardProps {
   isSelected: boolean;
   onDelete?: (id: string) => void;
   isDeleting?: boolean;
+  // Bulk selection props
+  selectionMode?: boolean;
+  isChecked?: boolean;
+  onCheckChange?: (id: string, checked: boolean) => void;
 }
 
-export default function ItemCard({ item, onClick, isSelected, onDelete, isDeleting = false }: ItemCardProps) {
+export default function ItemCard({ 
+  item, 
+  onClick, 
+  isSelected, 
+  onDelete, 
+  isDeleting = false,
+  selectionMode = false,
+  isChecked = false,
+  onCheckChange,
+}: ItemCardProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
 
@@ -42,89 +55,133 @@ export default function ItemCard({ item, onClick, isSelected, onDelete, isDeleti
     }
   };
 
+  const handleCheckboxClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onCheckChange) {
+      onCheckChange(item.id, !isChecked);
+    }
+  };
+
+  const handleCardClick = () => {
+    if (selectionMode && onCheckChange) {
+      onCheckChange(item.id, !isChecked);
+    } else {
+      onClick();
+    }
+  };
+
+  const handleLongPress = () => {
+    if (!selectionMode && onCheckChange) {
+      onCheckChange(item.id, true);
+    }
+  };
+
   return (
     <>
       <div
         className={`relative w-full text-left p-4 border-b border-gray-100 transition-colors ${
-          isSelected
+          isChecked
+            ? 'bg-primary-100 border-l-4 border-l-primary-500'
+            : isSelected
             ? 'bg-primary-50 border-l-4 border-l-primary-500'
             : 'bg-white hover:bg-gray-50'
         } ${isDeleting ? 'opacity-50 pointer-events-none' : ''}`}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-        <button
-          onClick={onClick}
-          className="w-full text-left focus-ring"
-          aria-label={`View ${item.title || 'untitled'} ${item.type}`}
-          aria-pressed={isSelected}
-          disabled={isDeleting}
-        >
-          <div className="flex items-start gap-3">
-            {/* Icon */}
-            <div className="flex-shrink-0 mt-0.5">
-              <span className="text-2xl" role="img" aria-label={item.type === 'note' ? 'Note' : 'Link'}>
-                {item.type === 'note' ? '📝' : '🔗'}
-              </span>
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 min-w-0">
-              {/* Title */}
-              <h3 className="text-base font-semibold text-gray-900 mb-1 truncate">
-                {item.title || '(Untitled)'}
-              </h3>
-
-              {/* Body Preview */}
-              {item.body && (
-                <p className="text-sm text-gray-600 mb-2 line-clamp-2">
-                  {item.body}
-                </p>
+        <div className="flex items-start gap-3">
+          {/* Checkbox - always visible in selection mode, or on hover */}
+          {(selectionMode || isHovered) && (
+            <button
+              onClick={handleCheckboxClick}
+              className={`flex-shrink-0 mt-1 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
+                isChecked
+                  ? 'bg-primary-500 border-primary-500 text-white'
+                  : 'border-gray-300 hover:border-primary-400 bg-white'
+              }`}
+              aria-label={isChecked ? 'Deselect item' : 'Select item'}
+            >
+              {isChecked && (
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                </svg>
               )}
+            </button>
+          )}
 
-              {/* URL */}
-              {item.url && (
-                <a
-                  href={item.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className="text-sm text-primary-500 hover:text-primary-600 truncate block mb-2"
-                  aria-label={`Open ${item.url}`}
-                >
-                  {item.url}
-                </a>
-              )}
-
-              {/* Tags and Date */}
-              <div className="flex items-center gap-2 flex-wrap">
-                {item.tags.length > 0 && (
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {item.tags.slice(0, 3).map(tag => (
-                      <span
-                        key={tag}
-                        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary-100 text-primary-700"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                    {item.tags.length > 3 && (
-                      <span className="text-xs text-gray-500">
-                        +{item.tags.length - 3}
-                      </span>
-                    )}
-                  </div>
-                )}
-                <span className="text-xs text-gray-500">
-                  {formatDate(item.createdAt)}
+          <button
+            onClick={handleCardClick}
+            className="flex-1 text-left focus-ring min-w-0"
+            aria-label={`View ${item.title || 'untitled'} ${item.type}`}
+            aria-pressed={isSelected}
+            disabled={isDeleting}
+          >
+            <div className="flex items-start gap-3">
+              {/* Icon */}
+              <div className="flex-shrink-0 mt-0.5">
+                <span className="text-2xl" role="img" aria-label={item.type === 'note' ? 'Note' : 'Link'}>
+                  {item.type === 'note' ? '📝' : '🔗'}
                 </span>
               </div>
-            </div>
-          </div>
-        </button>
 
-        {/* Delete Button - Shows on hover or when selected */}
-        {onDelete && (isHovered || isSelected) && (
+              {/* Content */}
+              <div className="flex-1 min-w-0">
+                {/* Title */}
+                <h3 className="text-base font-semibold text-gray-900 mb-1 truncate">
+                  {item.title || '(Untitled)'}
+                </h3>
+
+                {/* Body Preview */}
+                {item.body && (
+                  <p className="text-sm text-gray-600 mb-2 line-clamp-2">
+                    {item.body}
+                  </p>
+                )}
+
+                {/* URL */}
+                {item.url && (
+                  <a
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-sm text-primary-500 hover:text-primary-600 truncate block mb-2"
+                    aria-label={`Open ${item.url}`}
+                  >
+                    {item.url}
+                  </a>
+                )}
+
+                {/* Tags and Date */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {item.tags.length > 0 && (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {item.tags.slice(0, 3).map(tag => (
+                        <span
+                          key={tag}
+                          className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary-100 text-primary-700"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                      {item.tags.length > 3 && (
+                        <span className="text-xs text-gray-500">
+                          +{item.tags.length - 3}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  <span className="text-xs text-gray-500">
+                    {formatDate(item.createdAt)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </button>
+        </div>
+
+        {/* Delete Button - Shows on hover or when selected (not in selection mode) */}
+        {onDelete && !selectionMode && (isHovered || isSelected) && (
           <button
             onClick={handleDeleteClick}
             className="absolute top-4 right-4 p-1.5 text-gray-400 hover:text-danger-500 hover:bg-danger-50 rounded-lg transition-colors focus-ring"

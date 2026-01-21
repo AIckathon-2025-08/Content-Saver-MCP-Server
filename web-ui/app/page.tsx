@@ -26,6 +26,11 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
+  
+  // Bulk selection state
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
   useEffect(() => {
     loadItems();
@@ -176,6 +181,94 @@ export default function Home() {
     }
   };
 
+  // Bulk operations
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    
+    try {
+      setError(null);
+      setIsBulkDeleting(true);
+
+      const idsToDelete = Array.from(selectedIds);
+
+      // Optimistic update
+      setItems(prev => prev.filter(item => !selectedIds.has(item.id)));
+      setFilteredItems(prev => prev.filter(item => !selectedIds.has(item.id)));
+
+      // Close detail panel if selected item was deleted
+      if (selectedItem && selectedIds.has(selectedItem.id)) {
+        setSelectedItem(null);
+      }
+
+      const response = await fetch('/api/items/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'delete',
+          ids: idsToDelete,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete items');
+      }
+
+      const result = await response.json();
+      
+      // Clear selection and exit selection mode
+      setSelectedIds(new Set());
+      setSelectionMode(false);
+
+      // Reload to ensure consistency
+      await loadItems();
+
+      // Show success message
+      if (result.deletedCount > 0) {
+        setError(null);
+      }
+    } catch (error) {
+      console.error('Error bulk deleting:', error);
+      setError('Failed to delete items. Please try again.');
+      await loadItems(); // Reload to restore state
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
+  const handleBulkAddTag = async (tag: string) => {
+    if (selectedIds.size === 0) return;
+    
+    try {
+      setError(null);
+
+      const response = await fetch('/api/items/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'addTag',
+          ids: Array.from(selectedIds),
+          tag,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to add tag');
+      }
+
+      // Reload to get updated items
+      await loadItems();
+
+      // Clear selection
+      setSelectedIds(new Set());
+      setSelectionMode(false);
+    } catch (error) {
+      console.error('Error adding tag:', error);
+      setError('Failed to add tag. Please try again.');
+      setTimeout(() => setError(null), 5000);
+    }
+  };
+
   const handleOpenAddModal = (type: 'note' | 'link') => {
     setAddModalType(type);
     setShowAddModal(true);
@@ -269,9 +362,16 @@ export default function Home() {
             onAddLink={() => handleOpenAddModal('link')}
             onDelete={handleDeleteItem}
             deletingItemId={deletingItemId}
+            selectionMode={selectionMode}
+            selectedIds={selectedIds}
+            onToggleSelectionMode={() => setSelectionMode(!selectionMode)}
+            onSelectionChange={setSelectedIds}
+            onBulkDelete={handleBulkDelete}
+            onBulkAddTag={handleBulkAddTag}
+            isBulkDeleting={isBulkDeleting}
           />
           
-          {selectedItem && !showChat && (
+          {selectedItem && !showChat && !selectionMode && (
             <ItemDetail
               item={selectedItem}
               onClose={() => setSelectedItem(null)}

@@ -2,6 +2,7 @@
 
 import { ContentItem } from '@/types';
 import ItemCard from './ItemCard';
+import BulkActionsBar from './BulkActionsBar';
 
 interface ItemListProps {
   items: ContentItem[];
@@ -12,9 +13,62 @@ interface ItemListProps {
   onAddLink?: () => void;
   onDelete?: (id: string) => void;
   deletingItemId?: string | null;
+  // Bulk selection props
+  selectionMode: boolean;
+  selectedIds: Set<string>;
+  onToggleSelectionMode: () => void;
+  onSelectionChange: (ids: Set<string>) => void;
+  onBulkDelete: () => void;
+  onBulkAddTag: (tag: string) => void;
+  isBulkDeleting?: boolean;
 }
 
-export default function ItemList({ items, loading, onItemClick, selectedItemId, onAddNote, onAddLink, onDelete, deletingItemId }: ItemListProps) {
+export default function ItemList({ 
+  items, 
+  loading, 
+  onItemClick, 
+  selectedItemId, 
+  onAddNote, 
+  onAddLink, 
+  onDelete, 
+  deletingItemId,
+  selectionMode,
+  selectedIds,
+  onToggleSelectionMode,
+  onSelectionChange,
+  onBulkDelete,
+  onBulkAddTag,
+  isBulkDeleting = false,
+}: ItemListProps) {
+  
+  const handleCheckChange = (id: string, checked: boolean) => {
+    const newSelection = new Set(selectedIds);
+    if (checked) {
+      newSelection.add(id);
+    } else {
+      newSelection.delete(id);
+    }
+    onSelectionChange(newSelection);
+    
+    // Auto-enter selection mode when first item is selected
+    if (newSelection.size > 0 && !selectionMode) {
+      onToggleSelectionMode();
+    }
+  };
+
+  const handleSelectAll = () => {
+    onSelectionChange(new Set(items.map(item => item.id)));
+  };
+
+  const handleDeselectAll = () => {
+    onSelectionChange(new Set());
+  };
+
+  const handleCancelSelection = () => {
+    onSelectionChange(new Set());
+    onToggleSelectionMode();
+  };
+
   // Loading State with Skeletons
   if (loading) {
     return (
@@ -95,22 +149,55 @@ export default function ItemList({ items, loading, onItemClick, selectedItemId, 
 
   // Item List
   return (
-    <div className="flex-1 overflow-y-auto bg-white">
-      <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
-        <p className="text-sm text-gray-600">
-          {items.length} {items.length === 1 ? 'item' : 'items'}
-        </p>
-      </div>
-      {items.map(item => (
-        <ItemCard
-          key={item.id}
-          item={item}
-          onClick={() => onItemClick(item)}
-          isSelected={item.id === selectedItemId}
-          onDelete={onDelete}
-          isDeleting={deletingItemId === item.id}
+    <div className="flex-1 flex flex-col overflow-hidden bg-white">
+      {/* Bulk Actions Bar */}
+      {selectionMode && (
+        <BulkActionsBar
+          selectedCount={selectedIds.size}
+          totalCount={items.length}
+          onSelectAll={handleSelectAll}
+          onDeselectAll={handleDeselectAll}
+          onBulkDelete={onBulkDelete}
+          onBulkAddTag={onBulkAddTag}
+          onCancel={handleCancelSelection}
+          isDeleting={isBulkDeleting}
         />
-      ))}
+      )}
+
+      {/* Header with count and bulk select button */}
+      {!selectionMode && (
+        <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+          <p className="text-sm text-gray-600">
+            {items.length} {items.length === 1 ? 'item' : 'items'}
+          </p>
+          <button
+            onClick={onToggleSelectionMode}
+            className="text-sm text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1"
+          >
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            Select
+          </button>
+        </div>
+      )}
+
+      {/* Items */}
+      <div className="flex-1 overflow-y-auto">
+        {items.map(item => (
+          <ItemCard
+            key={item.id}
+            item={item}
+            onClick={() => onItemClick(item)}
+            isSelected={item.id === selectedItemId}
+            onDelete={onDelete}
+            isDeleting={deletingItemId === item.id}
+            selectionMode={selectionMode}
+            isChecked={selectedIds.has(item.id)}
+            onCheckChange={handleCheckChange}
+          />
+        ))}
+      </div>
     </div>
   );
 }
