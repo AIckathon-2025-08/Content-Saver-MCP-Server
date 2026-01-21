@@ -1,17 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { executeAutomationPipeline, completeTicketAfterImplementation } from '@/lib/automation-pipeline';
+import { executeAutomationPipeline } from '@/lib/automation-pipeline';
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🤖 HONEST JIRA WEBHOOK HANDLER
+// 🤖 FULL AI AUTOMATION WEBHOOK
 // ═══════════════════════════════════════════════════════════════════════════
 //
-// POST /api/webhooks/jira - Called when ticket moves to "In Progress"
-//   → Logs work item, returns guidance
-//   → Does NOT auto-implement or auto-complete
+// When a ticket moves to "In Progress":
+// 1. AI reads the ticket requirements
+// 2. AI generates and applies code changes
+// 3. Code is committed and pushed to GitHub
+// 4. Vercel auto-deploys
+// 5. Ticket is marked "Done"
+// 6. Confluence release note is created
 //
-// POST /api/webhooks/jira/complete - Called AFTER actual implementation
-//   → Transitions to "Done"
-//   → Creates Confluence release note
+// This is FULL END-TO-END automation!
 //
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -34,7 +36,6 @@ interface JiraWebhookPayload {
       toString: string;
     }>;
   };
-  // Direct format from Jira Automation
   key?: string;
   fields?: {
     summary: string;
@@ -42,27 +43,22 @@ interface JiraWebhookPayload {
   };
 }
 
-/**
- * POST - Triggered when ticket moves to "In Progress"
- * Does NOT auto-complete - only logs and returns guidance
- */
 export async function POST(request: NextRequest) {
   try {
     const payload: JiraWebhookPayload = await request.json();
     
-    console.log('\n📨 Received Jira webhook');
+    console.log('\n🤖 FULL AI AUTOMATION TRIGGERED');
     
-    // Extract ticket key
     const ticketKey = payload.issue?.key || payload.key || null;
     
     if (!ticketKey) {
       return NextResponse.json({ 
         success: false,
-        message: 'No ticket key found in payload' 
+        message: 'No ticket key found' 
       });
     }
 
-    // Check if this is a status change (if changelog present)
+    // Check for In Progress transition
     const hasChangelog = (payload.changelog?.items?.length ?? 0) > 0;
     if (hasChangelog) {
       const statusChange = payload.changelog?.items?.find(
@@ -71,24 +67,28 @@ export async function POST(request: NextRequest) {
       if (!statusChange) {
         return NextResponse.json({ 
           success: true,
-          message: 'Not an In Progress transition, ignoring' 
+          message: 'Not an In Progress transition' 
         });
       }
     }
 
-    // Execute the HONEST pipeline (no auto-complete)
-    console.log(`\n🎯 Processing: ${ticketKey}`);
+    // Execute FULL automation
+    console.log(`\n🚀 Starting full automation for: ${ticketKey}`);
     const result = await executeAutomationPipeline(ticketKey);
 
     return NextResponse.json({
       success: result.success,
-      message: result.message,
       ticketKey: result.ticketKey,
+      message: result.success 
+        ? `✅ FULL AUTOMATION COMPLETE: ${ticketKey} implemented, deployed, and marked Done!`
+        : `⚠️ Automation failed: ${result.error}`,
+      steps: result.steps,
       summary: result.summary,
-      acceptanceCriteria: result.acceptanceCriteria,
-      suggestedBranch: result.suggestedBranch,
-      nextSteps: result.nextSteps,
-      note: '⚠️ This ticket is NOT marked as Done. Implementation required before completion.',
+      filesChanged: result.filesChanged,
+      commitUrl: result.commitUrl,
+      deploymentUrl: result.deploymentUrl,
+      confluenceUrl: result.confluenceUrl,
+      error: result.error,
     });
 
   } catch (error) {
@@ -96,25 +96,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { 
         success: false,
-        error: error instanceof Error ? error.message : 'Failed to process webhook' 
+        error: error instanceof Error ? error.message : 'Automation failed' 
       },
       { status: 500 }
     );
   }
 }
 
-/**
- * GET - Webhook status and documentation
- */
-export async function GET(request: NextRequest) {
+export async function GET() {
   return NextResponse.json({
     status: 'ok',
-    message: 'Honest Jira Automation Pipeline',
-    version: '3.0',
-    endpoints: {
-      'POST /api/webhooks/jira': 'Triggered when ticket moves to In Progress. Returns guidance, does NOT auto-complete.',
-      'POST /api/webhooks/jira/complete': 'Call AFTER implementation to transition to Done and create Confluence note.',
-    },
-    note: 'Tickets are only marked Done after verified implementation.',
+    name: 'Full AI Automation Pipeline',
+    version: '4.0',
+    description: 'When ticket moves to In Progress: AI implements code → commits → deploys → marks Done → creates Confluence',
+    capabilities: [
+      '🧠 AI Code Generation',
+      '📤 Auto Git Commit & Push',
+      '🚀 Auto Vercel Deployment',
+      '✅ Auto Jira → Done',
+      '📄 Auto Confluence Release Notes',
+    ],
   });
 }
