@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     // 2. Full webhook event with changelog
     
     // Check if we have a changelog (full webhook format)
-    const hasChangelog = payload.changelog?.items?.length > 0;
+    const hasChangelog = (payload.changelog?.items?.length ?? 0) > 0;
     
     if (hasChangelog) {
       // Verify this is a status change to "In Progress"
