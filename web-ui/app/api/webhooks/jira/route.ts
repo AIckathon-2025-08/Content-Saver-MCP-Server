@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { executeAutomationPipeline } from '@/lib/automation-pipeline';
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🔔 Jira Webhook Handler - Triggered on "In Progress" status change
+// 🤖 AI-DRIVEN JIRA WEBHOOK HANDLER
 // ═══════════════════════════════════════════════════════════════════════════
 //
-// This endpoint receives webhooks from Jira Automation when a ticket
-// is moved to "In Progress" status.
-//
-// Actions performed:
-// 1. Create Git branch for the ticket
-// 2. Log the event
-// 3. Optionally notify team (Slack integration can be added)
+// When a ticket moves to "In Progress", this webhook:
+// 1. Triggers the full automation pipeline
+// 2. Implements the feature using AI
+// 3. Deploys to production
+// 4. Moves ticket to "Done"
+// 5. Creates Confluence release note
 //
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -43,18 +43,34 @@ interface JiraWebhookPayload {
       toString: string;
     }>;
   };
+  // Direct format from Jira Automation "Send web request"
+  key?: string;
+  fields?: {
+    summary: string;
+    status: { name: string };
+    issuetype?: { name: string };
+    assignee?: { displayName: string };
+  };
 }
 
 export async function POST(request: NextRequest) {
   try {
     const payload: JiraWebhookPayload = await request.json();
     
-    console.log('📨 Received Jira webhook payload:', JSON.stringify(payload, null, 2));
+    console.log('\n📨 Received Jira webhook');
+    console.log('Payload:', JSON.stringify(payload, null, 2));
     
-    // Handle both formats:
-    // 1. Direct issue data from "Send web request" action (no changelog)
-    // 2. Full webhook event with changelog
+    // Extract ticket key from various payload formats
+    const ticketKey = payload.issue?.key || payload.key || null;
     
+    if (!ticketKey) {
+      console.log('⚠️ No ticket key found in payload');
+      return NextResponse.json({ 
+        success: false,
+        message: 'No ticket key found in payload' 
+      });
+    }
+
     // Check if we have a changelog (full webhook format)
     const hasChangelog = (payload.changelog?.items?.length ?? 0) > 0;
     
@@ -71,52 +87,42 @@ export async function POST(request: NextRequest) {
         });
       }
     }
-    
-    // For "Send web request" format, the payload IS the issue data
-    // For webhook format, the issue is nested under payload.issue
-    const issueData = payload.issue || payload as any;
-    const fields = issueData.fields || issueData;
-    
-    const issueKey = issueData.key || payload.issue?.key || 'UNKNOWN';
-    const summary = fields.summary || 'No summary';
-    const assignee = fields.assignee?.displayName || 'Unassigned';
-    const triggeredBy = payload.user?.displayName || 'Automation';
 
-    console.log(`🚀 Ticket ${issueKey} moved to In Progress`);
-    console.log(`   Summary: ${summary}`);
-    console.log(`   Assignee: ${assignee}`);
-    console.log(`   Triggered by: ${triggeredBy}`);
+    // Get summary for logging
+    const summary = payload.issue?.fields?.summary || payload.fields?.summary || 'Unknown';
+    console.log(`\n🎯 Processing: ${ticketKey} - ${summary}`);
 
-    // Generate branch name from ticket
-    const branchName = generateBranchName(issueKey!, summary);
-    
-    // Store the event for tracking
-    const event = {
-      timestamp: new Date().toISOString(),
-      ticketId: issueKey,
-      summary,
-      assignee,
-      triggeredBy,
-      suggestedBranch: branchName,
-      status: 'In Progress',
-    };
+    // Execute the full automation pipeline
+    console.log('\n🤖 Starting AI-driven automation pipeline...');
+    const result = await executeAutomationPipeline(ticketKey);
 
-    // Log to console (in production, you might want to store this)
-    console.log('📋 Work Started Event:', JSON.stringify(event, null, 2));
-
-    // Return success with branch suggestion
-    return NextResponse.json({
-      success: true,
-      message: `Ticket ${issueKey} is now In Progress`,
-      suggestedBranch: branchName,
-      gitCommand: `git checkout -b ${branchName}`,
-      event,
-    });
+    if (result.success) {
+      return NextResponse.json({
+        success: true,
+        message: `✅ Full automation completed for ${ticketKey}`,
+        ticketKey: result.ticketKey,
+        steps: result.steps,
+        implementationSummary: result.implementationSummary,
+        deploymentUrl: result.deploymentUrl,
+        confluenceUrl: result.confluenceUrl,
+      });
+    } else {
+      return NextResponse.json({
+        success: false,
+        message: `⚠️ Pipeline partially completed for ${ticketKey}`,
+        ticketKey: result.ticketKey,
+        steps: result.steps,
+        error: result.error,
+      });
+    }
 
   } catch (error) {
     console.error('Webhook error:', error);
     return NextResponse.json(
-      { error: 'Failed to process webhook' },
+      { 
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to process webhook' 
+      },
       { status: 500 }
     );
   }
@@ -126,20 +132,13 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   return NextResponse.json({
     status: 'ok',
-    message: 'Jira webhook endpoint is active',
-    supportedEvents: ['issue_updated (status → In Progress)'],
+    message: 'AI-Driven Jira Automation Pipeline',
+    version: '2.0',
+    capabilities: [
+      'Automatic ticket processing on "In Progress"',
+      'AI-powered implementation analysis',
+      'Automatic Jira transition to "Done"',
+      'Automatic Confluence release note creation',
+    ],
   });
 }
-
-function generateBranchName(ticketId: string, summary: string): string {
-  // Convert summary to branch-friendly format
-  const cleanSummary = summary
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')  // Remove special chars
-    .replace(/\s+/g, '-')           // Replace spaces with hyphens
-    .substring(0, 40)               // Limit length
-    .replace(/-+$/, '');            // Remove trailing hyphens
-
-  return `feature/${ticketId.toLowerCase()}-${cleanSummary}`;
-}
-
