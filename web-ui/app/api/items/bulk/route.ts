@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getStorage } from '@/lib/storage';
+import { deleteItem, getItemById, updateItem } from '@/lib/mcp-client';
 
 // POST /api/items/bulk - Bulk operations on items
 export async function POST(request: NextRequest) {
@@ -13,8 +13,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-
-    const storage = getStorage();
     
     switch (action) {
       case 'delete': {
@@ -22,7 +20,7 @@ export async function POST(request: NextRequest) {
         const results = await Promise.all(
           ids.map(async (id: string) => {
             try {
-              const success = await storage.deleteItem(id);
+              const success = await deleteItem(id);
               return { id, success };
             } catch (error) {
               return { id, success: false, error: String(error) };
@@ -56,7 +54,7 @@ export async function POST(request: NextRequest) {
         const results = await Promise.all(
           ids.map(async (id: string) => {
             try {
-              const item = await storage.getItem(id);
+              const item = await getItemById(id);
               if (!item) {
                 return { id, success: false, error: 'Item not found' };
               }
@@ -64,10 +62,10 @@ export async function POST(request: NextRequest) {
               // Add tag if not already present
               const existingTags = new Set(item.tags.map(t => t.toLowerCase()));
               if (!existingTags.has(normalizedTag)) {
-                const updatedItem = await storage.updateItem(id, {
+                const result = await updateItem(id, {
                   tags: [...item.tags, normalizedTag],
                 });
-                return { id, success: true, item: updatedItem };
+                return { id, success: !!result, item: result?.item };
               }
               
               return { id, success: true, item, alreadyHasTag: true };
@@ -101,17 +99,17 @@ export async function POST(request: NextRequest) {
         const results = await Promise.all(
           ids.map(async (id: string) => {
             try {
-              const item = await storage.getItem(id);
+              const item = await getItemById(id);
               if (!item) {
                 return { id, success: false, error: 'Item not found' };
               }
               
               const updatedTags = item.tags.filter(t => t.toLowerCase() !== normalizedTag);
               if (updatedTags.length !== item.tags.length) {
-                const updatedItem = await storage.updateItem(id, {
+                const result = await updateItem(id, {
                   tags: updatedTags,
                 });
-                return { id, success: true, item: updatedItem };
+                return { id, success: !!result, item: result?.item };
               }
               
               return { id, success: true, item, tagNotFound: true };
@@ -145,4 +143,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
