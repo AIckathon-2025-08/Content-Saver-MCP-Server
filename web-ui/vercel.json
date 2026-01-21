@@ -1,0 +1,11 @@
+{
+  "functions": {
+    "app/api/webhooks/jira/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/webhooks/jira/complete/route.ts": {
+      "maxDuration": 60
+    }
+  }
+}
+
