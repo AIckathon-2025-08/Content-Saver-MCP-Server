@@ -29,13 +29,14 @@ export async function PUT(
 ) {
   try {
     const body = await request.json();
-    const { title, body: itemBody, url, tags } = body;
+    const { title, body: itemBody, url, tags, isPinned } = body;
 
     const result = await updateItem(params.id, {
       title,
       body: itemBody,
       url,
       tags,
+      isPinned,
     });
 
     if (!result) {

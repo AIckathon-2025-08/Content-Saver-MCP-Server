@@ -21,6 +21,8 @@ interface ItemListProps {
   onBulkDelete: () => void;
   onBulkAddTag: (tag: string) => void;
   isBulkDeleting?: boolean;
+  // KAN-7: Pin functionality
+  onPin?: (id: string, isPinned: boolean) => void;
 }
 
 export default function ItemList({ 
@@ -39,6 +41,7 @@ export default function ItemList({
   onBulkDelete,
   onBulkAddTag,
   isBulkDeleting = false,
+  onPin,
 }: ItemListProps) {
   
   const handleCheckChange = (id: string, checked: boolean) => {
@@ -95,7 +98,7 @@ export default function ItemList({
   return (
     <div className="flex-1 overflow-y-auto">
       {visibleItems.map(item => (
-        <ItemCard key={item.id} item={item} onClick={() => onItemClick(item)} isSelected={item.id === selectedItemId} onDelete={onDelete} isDeleting={deletingItemId === item.id} selectionMode={selectionMode} isChecked={selectedIds.has(item.id)} onCheckChange={handleCheckChange} />
+        <ItemCard key={item.id} item={item} onClick={() => onItemClick(item)} isSelected={item.id === selectedItemId} onDelete={onDelete} isDeleting={deletingItemId === item.id} selectionMode={selectionMode} isChecked={selectedIds.has(item.id)} onCheckChange={handleCheckChange} onPin={onPin} />
       ))}
       {selectionMode && <BulkActionsBar selectedCount={selectedIds.size} totalCount={visibleItems.length} onSelectAll={handleSelectAll} onDeselectAll={handleDeselectAll} onCancel={handleCancelSelection} onBulkDelete={onBulkDelete} onBulkAddTag={onBulkAddTag} isDeleting={isBulkDeleting} />}
     </div>

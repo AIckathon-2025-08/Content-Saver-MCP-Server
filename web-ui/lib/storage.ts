@@ -312,6 +312,7 @@ export class Storage {
     body?: string;
     url?: string;
     tags?: string[];
+    isPinned?: boolean;
   }): Promise<UpdateResult | null> {
     const index = this.items.findIndex((item) => item.id === id);
     if (index === -1) {
@@ -369,6 +370,12 @@ export class Storage {
         updatedItem.tags = newTags;
         hasChanges = true;
       }
+    }
+
+    // KAN-7: Update isPinned if provided
+    if (updates.isPinned !== undefined && updates.isPinned !== existingItem.isPinned) {
+      updatedItem.isPinned = updates.isPinned;
+      hasChanges = true;
     }
 
     // Only persist if changes were made

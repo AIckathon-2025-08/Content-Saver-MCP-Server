@@ -96,6 +96,13 @@ export default function Home() {
       });
     }
 
+    // KAN-7: Sort pinned items first
+    filtered.sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      return 0;
+    });
+
     setFilteredItems(filtered);
   };
 
@@ -269,6 +276,46 @@ export default function Home() {
     }
   };
 
+  // KAN-7: Pin/Favorite items
+  const handlePinItem = async (id: string, isPinned: boolean) => {
+    try {
+      // Optimistic update
+      setItems(prev => prev.map(item =>
+        item.id === id ? { ...item, isPinned } : item
+      ));
+
+      const response = await fetch(`/api/items/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isPinned }),
+      });
+
+      if (!response.ok) {
+        // Revert on error
+        setItems(prev => prev.map(item =>
+          item.id === id ? { ...item, isPinned: !isPinned } : item
+        ));
+        throw new Error('Failed to update pin status');
+      }
+
+      const result = await response.json();
+      
+      // Update with server response
+      setItems(prev => prev.map(item =>
+        item.id === id ? result.item : item
+      ));
+
+      // Update selectedItem if it was pinned/unpinned
+      if (selectedItem?.id === id) {
+        setSelectedItem(result.item);
+      }
+    } catch (error) {
+      console.error('Error pinning item:', error);
+      setError('Failed to update pin status.');
+      setTimeout(() => setError(null), 3000);
+    }
+  };
+
   const handleOpenAddModal = (type: 'note' | 'link') => {
     setAddModalType(type);
     setShowAddModal(true);
@@ -369,6 +416,7 @@ export default function Home() {
             onBulkDelete={handleBulkDelete}
             onBulkAddTag={handleBulkAddTag}
             isBulkDeleting={isBulkDeleting}
+            onPin={handlePinItem}
           />
           
           {selectedItem && !showChat && !selectionMode && (

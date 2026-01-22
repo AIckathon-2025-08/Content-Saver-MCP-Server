@@ -351,6 +351,7 @@ export async function updateItem(
     body?: string;
     url?: string;
     tags?: string[];
+    isPinned?: boolean;
   }
 ): Promise<UpdateResult | null> {
   try {
