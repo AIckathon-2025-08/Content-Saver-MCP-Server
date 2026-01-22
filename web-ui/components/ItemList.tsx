@@ -97,7 +97,7 @@ export default function ItemList({
       {visibleItems.map(item => (
         <ItemCard key={item.id} item={item} onClick={() => onItemClick(item)} isSelected={item.id === selectedItemId} onDelete={onDelete} isDeleting={deletingItemId === item.id} selectionMode={selectionMode} isChecked={selectedIds.has(item.id)} onCheckChange={handleCheckChange} />
       ))}
-      {selectionMode && <BulkActionsBar selectedCount={selectedIds.size} onSelectAll={handleSelectAll} onDeselectAll={handleDeselectAll} onCancelSelection={handleCancelSelection} onBulkDelete={onBulkDelete} onBulkAddTag={onBulkAddTag} isBulkDeleting={isBulkDeleting} />}
+      {selectionMode && <BulkActionsBar selectedCount={selectedIds.size} totalCount={visibleItems.length} onSelectAll={handleSelectAll} onDeselectAll={handleDeselectAll} onCancel={handleCancelSelection} onBulkDelete={onBulkDelete} onBulkAddTag={onBulkAddTag} isDeleting={isBulkDeleting} />}
     </div>
   );
 }
