@@ -1,54 +1,90 @@
 /**
- * Vercel KV Storage Adapter
+ * Redis Storage Adapter
  * 
- * Provides persistent storage using Vercel KV (Redis)
- * Falls back to in-memory storage if KV is not configured
+ * Provides persistent storage using Redis (via REDIS_URL)
+ * Falls back gracefully if Redis is not configured
  */
 
-import { kv } from '@vercel/kv';
+import Redis from 'ioredis';
 import { ContentItem, SaveResult, UpdateResult } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 
 const ITEMS_KEY = 'content-saver:items';
 
+// Singleton Redis client
+let redisClient: Redis | null = null;
+
 /**
- * Check if Vercel KV is configured
+ * Get Redis client - lazy initialization
  */
-function isKVConfigured(): boolean {
-  return !!(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
+function getRedisClient(): Redis | null {
+  if (redisClient) return redisClient;
+  
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl) {
+    console.log('REDIS_URL not configured');
+    return null;
+  }
+
+  try {
+    redisClient = new Redis(redisUrl, {
+      maxRetriesPerRequest: 3,
+      connectTimeout: 5000,
+      lazyConnect: true,
+    });
+    
+    redisClient.on('error', (err) => {
+      console.error('Redis connection error:', err);
+    });
+    
+    return redisClient;
+  } catch (error) {
+    console.error('Failed to create Redis client:', error);
+    return null;
+  }
 }
 
 /**
- * Get all items from KV storage
+ * Check if Redis is configured
+ */
+function isRedisConfigured(): boolean {
+  return !!process.env.REDIS_URL;
+}
+
+/**
+ * Get all items from Redis storage
  */
 export async function getAllItems(): Promise<ContentItem[]> {
-  if (!isKVConfigured()) {
-    console.log('KV not configured, using empty array');
+  const client = getRedisClient();
+  if (!client) {
+    console.log('Redis not configured, using empty array');
     return [];
   }
 
   try {
-    const items = await kv.get<ContentItem[]>(ITEMS_KEY);
-    return items || [];
+    const data = await client.get(ITEMS_KEY);
+    if (!data) return [];
+    return JSON.parse(data) as ContentItem[];
   } catch (error) {
-    console.error('Error fetching items from KV:', error);
+    console.error('Error fetching items from Redis:', error);
     return [];
   }
 }
 
 /**
- * Save all items to KV storage
+ * Save all items to Redis storage
  */
 async function saveAllItems(items: ContentItem[]): Promise<void> {
-  if (!isKVConfigured()) {
-    console.log('KV not configured, skipping save');
+  const client = getRedisClient();
+  if (!client) {
+    console.log('Redis not configured, skipping save');
     return;
   }
 
   try {
-    await kv.set(ITEMS_KEY, items);
+    await client.set(ITEMS_KEY, JSON.stringify(items));
   } catch (error) {
-    console.error('Error saving items to KV:', error);
+    console.error('Error saving items to Redis:', error);
     throw error;
   }
 }
@@ -284,4 +320,3 @@ export async function bulkAddTag(ids: string[], tag: string): Promise<{ updatedC
 
   return { updatedCount };
 }
-
