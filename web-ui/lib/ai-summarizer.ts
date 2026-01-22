@@ -109,9 +109,18 @@ export async function fetchPageContent(url: string): Promise<{ title?: string; c
 
 /**
  * Generate summary for a URL (fetches content and summarizes)
+ * Returns both the summary and the fetched title
  */
-export async function summarizeUrl(url: string, existingTitle?: string): Promise<string | null> {
-  const { title, content } = await fetchPageContent(url);
-  return generateSummary(url, existingTitle || title, content);
+export async function summarizeUrl(
+  url: string, 
+  existingTitle?: string
+): Promise<{ summary: string | null; title: string | null }> {
+  const { title: fetchedTitle, content } = await fetchPageContent(url);
+  const titleToUse = existingTitle || fetchedTitle;
+  const summary = await generateSummary(url, titleToUse, content);
+  return { 
+    summary, 
+    title: fetchedTitle || null  // Return fetched title so caller can use it
+  };
 }
 

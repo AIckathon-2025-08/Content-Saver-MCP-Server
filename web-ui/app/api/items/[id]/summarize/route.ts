@@ -27,7 +27,7 @@ export async function POST(
     }
 
     // Generate new summary
-    const summary = await summarizeUrl(item.url, item.title);
+    const { summary } = await summarizeUrl(item.url, item.title);
     
     if (!summary) {
       return NextResponse.json(

@@ -153,12 +153,16 @@ export async function saveLink(input: {
     return { item: existingItem, isDuplicate: true };
   }
 
-  // KAN-10: Generate AI summary for the link
+  // KAN-10: Generate AI summary and fetch title for the link
   let summary: string | undefined;
+  let fetchedTitle: string | undefined;
   try {
-    const generatedSummary = await summarizeUrl(input.url, input.title);
-    if (generatedSummary) {
-      summary = generatedSummary;
+    const result = await summarizeUrl(input.url, input.title);
+    if (result.summary) {
+      summary = result.summary;
+    }
+    if (result.title) {
+      fetchedTitle = result.title;
     }
   } catch (error) {
     console.error('Error generating summary:', error);
@@ -169,7 +173,7 @@ export async function saveLink(input: {
     id: uuidv4(),
     type: 'link',
     url: input.url.trim(),
-    title: input.title?.trim() || undefined,
+    title: input.title?.trim() || fetchedTitle || undefined, // Use provided title, or fetched title
     body: input.comment?.trim() || undefined,
     tags: (input.tags || []).map(t => t.trim().toLowerCase()).filter(t => t.length > 0),
     createdAt: new Date().toISOString(),
