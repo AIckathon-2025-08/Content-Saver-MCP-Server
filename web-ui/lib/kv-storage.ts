@@ -8,6 +8,7 @@
 import Redis from 'ioredis';
 import { ContentItem, SaveResult, UpdateResult } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
+import { summarizeUrl } from './ai-summarizer';
 
 const ITEMS_KEY = 'content-saver:items';
 
@@ -152,6 +153,18 @@ export async function saveLink(input: {
     return { item: existingItem, isDuplicate: true };
   }
 
+  // KAN-10: Generate AI summary for the link
+  let summary: string | undefined;
+  try {
+    const generatedSummary = await summarizeUrl(input.url, input.title);
+    if (generatedSummary) {
+      summary = generatedSummary;
+    }
+  } catch (error) {
+    console.error('Error generating summary:', error);
+    // Continue without summary - don't fail the save
+  }
+
   const newItem: ContentItem = {
     id: uuidv4(),
     type: 'link',
@@ -160,6 +173,7 @@ export async function saveLink(input: {
     body: input.comment?.trim() || undefined,
     tags: (input.tags || []).map(t => t.trim().toLowerCase()).filter(t => t.length > 0),
     createdAt: new Date().toISOString(),
+    summary, // KAN-10: AI-generated summary
   };
 
   items.unshift(newItem);
@@ -179,6 +193,7 @@ export async function updateItem(
     url?: string;
     tags?: string[];
     isPinned?: boolean;
+    summary?: string; // KAN-10
   }
 ): Promise<UpdateResult | null> {
   const items = await getAllItems();
@@ -218,6 +233,12 @@ export async function updateItem(
 
   if (updates.isPinned !== undefined && updates.isPinned !== existingItem.isPinned) {
     updatedItem.isPinned = updates.isPinned;
+    hasChanges = true;
+  }
+
+  // KAN-10: Update summary if provided
+  if (updates.summary !== undefined && updates.summary !== existingItem.summary) {
+    updatedItem.summary = updates.summary;
     hasChanges = true;
   }
 

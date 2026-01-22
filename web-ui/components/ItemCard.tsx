@@ -151,6 +151,16 @@ export default function ItemCard({
                   </p>
                 )}
 
+                {/* KAN-10: AI Summary for links */}
+                {item.type === 'link' && item.summary && (
+                  <div className="mb-2 p-2 bg-blue-50 rounded-md border-l-2 border-blue-400">
+                    <p className="text-xs text-blue-600 font-medium mb-0.5">✨ AI Summary</p>
+                    <p className="text-sm text-gray-700 line-clamp-2">
+                      {item.summary}
+                    </p>
+                  </div>
+                )}
+
                 {/* URL */}
                 {item.url && (
                   <a

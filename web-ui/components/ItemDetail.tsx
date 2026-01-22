@@ -91,6 +91,20 @@ export default function ItemDetail({ item, onClose, onDelete, onEdit }: ItemDeta
           </div>
         )}
 
+        {/* KAN-10: AI Summary for links */}
+        {item.type === 'link' && item.summary && (
+          <div>
+            <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+              ✨ AI Summary
+            </label>
+            <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+              <p className="text-sm text-gray-700 leading-relaxed">
+                {item.summary}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Tags */}
         {item.tags.length > 0 && (
           <div>

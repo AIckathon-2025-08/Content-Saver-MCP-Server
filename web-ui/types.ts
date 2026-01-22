@@ -16,7 +16,9 @@ export interface ContentItem {
   favicon?: string;
   ogImage?: string;
   siteName?: string;
-  isPinned?: boolean; // New field to track pinned items
+  isPinned?: boolean; // KAN-7: Pin/favorite items
+  // KAN-10: AI-generated summary for links
+  summary?: string;
 }
 
 export interface SaveNoteInput {
