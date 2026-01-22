@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { deleteItem } from '@/lib/mcp-client';
+import * as kvStorage from '@/lib/kv-storage';
 
 export async function DELETE(request: NextRequest) {
   try {
@@ -13,7 +13,7 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const success = await deleteItem(id);
+    const success = await kvStorage.deleteItem(id);
     if (!success) {
       return NextResponse.json(
         { error: 'Item not found' },
@@ -30,4 +30,3 @@ export async function DELETE(request: NextRequest) {
     );
   }
 }
-

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { deleteItem, getItemById, updateItem } from '@/lib/mcp-client';
+import * as kvStorage from '@/lib/kv-storage';
 
 // POST /api/items/bulk - Bulk operations on items
 export async function POST(request: NextRequest) {
@@ -16,27 +16,11 @@ export async function POST(request: NextRequest) {
     
     switch (action) {
       case 'delete': {
-        // Bulk delete items
-        const results = await Promise.all(
-          ids.map(async (id: string) => {
-            try {
-              const success = await deleteItem(id);
-              return { id, success };
-            } catch (error) {
-              return { id, success: false, error: String(error) };
-            }
-          })
-        );
-        
-        const successCount = results.filter(r => r.success).length;
-        const failedCount = results.filter(r => !r.success).length;
-
+        const result = await kvStorage.bulkDeleteItems(ids);
         return NextResponse.json({
           success: true,
-          message: `Deleted ${successCount} items${failedCount > 0 ? `, ${failedCount} failed` : ''}`,
-          results,
-          deletedCount: successCount,
-          failedCount,
+          message: `Deleted ${result.deletedCount} items`,
+          deletedCount: result.deletedCount,
         });
       }
 
@@ -48,84 +32,11 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        const normalizedTag = tag.toLowerCase().trim();
-        
-        // Add tag to each item
-        const results = await Promise.all(
-          ids.map(async (id: string) => {
-            try {
-              const item = await getItemById(id);
-              if (!item) {
-                return { id, success: false, error: 'Item not found' };
-              }
-              
-              // Add tag if not already present
-              const existingTags = new Set(item.tags.map(t => t.toLowerCase()));
-              if (!existingTags.has(normalizedTag)) {
-                const result = await updateItem(id, {
-                  tags: [...item.tags, normalizedTag],
-                });
-                return { id, success: !!result, item: result?.item };
-              }
-              
-              return { id, success: true, item, alreadyHasTag: true };
-            } catch (error) {
-              return { id, success: false, error: String(error) };
-            }
-          })
-        );
-        
-        const successCount = results.filter(r => r.success).length;
-
+        const result = await kvStorage.bulkAddTag(ids, tag);
         return NextResponse.json({
           success: true,
-          message: `Added tag "${normalizedTag}" to ${successCount} items`,
-          results,
-          updatedCount: successCount,
-        });
-      }
-
-      case 'removeTag': {
-        if (!tag || typeof tag !== 'string') {
-          return NextResponse.json(
-            { error: 'No tag provided for removeTag action' },
-            { status: 400 }
-          );
-        }
-
-        const normalizedTag = tag.toLowerCase().trim();
-        
-        // Remove tag from each item
-        const results = await Promise.all(
-          ids.map(async (id: string) => {
-            try {
-              const item = await getItemById(id);
-              if (!item) {
-                return { id, success: false, error: 'Item not found' };
-              }
-              
-              const updatedTags = item.tags.filter(t => t.toLowerCase() !== normalizedTag);
-              if (updatedTags.length !== item.tags.length) {
-                const result = await updateItem(id, {
-                  tags: updatedTags,
-                });
-                return { id, success: !!result, item: result?.item };
-              }
-              
-              return { id, success: true, item, tagNotFound: true };
-            } catch (error) {
-              return { id, success: false, error: String(error) };
-            }
-          })
-        );
-        
-        const successCount = results.filter(r => r.success).length;
-
-        return NextResponse.json({
-          success: true,
-          message: `Removed tag "${normalizedTag}" from ${successCount} items`,
-          results,
-          updatedCount: successCount,
+          message: `Added tag "${tag}" to ${result.updatedCount} items`,
+          updatedCount: result.updatedCount,
         });
       }
 

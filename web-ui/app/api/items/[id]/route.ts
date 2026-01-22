@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { updateItem, getItemById } from '@/lib/mcp-client';
+import * as kvStorage from '@/lib/kv-storage';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const item = await getItemById(params.id);
+    const item = await kvStorage.getItemById(params.id);
     if (!item) {
       return NextResponse.json(
         { error: 'Item not found' },
@@ -31,7 +31,7 @@ export async function PUT(
     const body = await request.json();
     const { title, body: itemBody, url, tags, isPinned } = body;
 
-    const result = await updateItem(params.id, {
+    const result = await kvStorage.updateItem(params.id, {
       title,
       body: itemBody,
       url,
@@ -51,7 +51,6 @@ export async function PUT(
     console.error('Error updating item:', error);
     const errorMessage = error instanceof Error ? error.message : 'Failed to update item';
 
-    // Handle duplicate URL error
     if (errorMessage.includes('already exists')) {
       return NextResponse.json(
         { error: errorMessage },

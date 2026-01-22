@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { saveNote, saveLink, getAllItems } from '@/lib/mcp-client';
+import * as kvStorage from '@/lib/kv-storage';
 import { SaveNoteInput, SaveLinkInput } from '@/types';
 
 export async function GET() {
   try {
-    const items = await getAllItems();
+    const items = await kvStorage.getAllItems();
     return NextResponse.json({ items });
   } catch (error) {
     console.error('Error fetching items:', error);
@@ -21,10 +21,10 @@ export async function POST(request: NextRequest) {
     const { type, ...data } = body;
 
     if (type === 'note') {
-      const result = await saveNote(data as SaveNoteInput);
+      const result = await kvStorage.saveNote(data as SaveNoteInput);
       return NextResponse.json(result);
     } else if (type === 'link') {
-      const result = await saveLink(data as SaveLinkInput);
+      const result = await kvStorage.saveLink(data as SaveLinkInput);
       return NextResponse.json(result);
     } else {
       return NextResponse.json(
