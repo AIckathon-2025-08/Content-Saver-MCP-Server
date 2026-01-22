@@ -16,6 +16,7 @@ export interface ContentItem {
   favicon?: string;
   ogImage?: string;
   siteName?: string;
+  isPinned?: boolean; // New field to track pinned items
 }
 
 export interface SaveNoteInput {
@@ -55,4 +56,3 @@ export interface UpdateResult {
   item: ContentItem;
   updated: boolean;
 }
-
