@@ -3,6 +3,13 @@
  * 
  * KAN-3: Added metadata fields for auto-fetched webpage data
  */
+export interface Collection {
+  id: string;
+  name: string;
+  description?: string;
+  color?: string;
+}
+
 export interface ContentItem {
   id: string;
   type: 'note' | 'link';
@@ -19,6 +26,7 @@ export interface ContentItem {
   isPinned?: boolean; // KAN-7: Pin/favorite items
   // KAN-10: AI-generated summary for links
   summary?: string;
+  collectionId?: string; // KAN-4: Associate item with a collection
 }
 
 export interface SaveNoteInput {
