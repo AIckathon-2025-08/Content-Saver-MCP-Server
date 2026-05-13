@@ -11,6 +11,7 @@ import ChatPanel from '@/components/ChatPanel';
 import SettingsModal from '@/components/SettingsModal';
 import MiroSyncModal from '@/components/MiroSyncModal';
 import { ContentItem } from '@/types';
+import * as local from '@/lib/local-items';
 
 export default function Home() {
   const [items, setItems] = useState<ContentItem[]>([]);
@@ -28,81 +29,48 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
-  
+
   // Bulk selection state
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
-  // Define loadItems first, before useEffects that depend on it
-  const loadItems = useCallback(async () => {
-    try {
-      console.log('Loading items...', { activeFilter });
-      setLoading(true);
-      setError(null);
-      let response;
-      if (activeFilter === 'recent') {
-        response = await fetch('/api/items/recent?days=30');
-      } else {
-        response = await fetch('/api/items');
-      }
+  // Persist items to localStorage whenever they change
+  const saveItems = useCallback((updated: ContentItem[]) => {
+    setItems(updated);
+    local.persistItems(updated);
+  }, []);
 
-      if (!response.ok) {
-        throw new Error('Failed to load items');
-      }
-
-      const data = await response.json();
-      console.log('Items loaded:', data.items?.length || 0);
-      setItems(data.items || []);
-    } catch (error) {
-      console.error('Error loading items:', error);
-      setError('Failed to load items. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  }, [activeFilter]);
-
+  // Load from localStorage on mount
   useEffect(() => {
-    loadItems();
-  }, [loadItems]);
+    const stored = local.loadItems();
+    setItems(stored);
+    setLoading(false);
+  }, []);
 
+  // Re-filter whenever items, search, or filter changes
   useEffect(() => {
-    filterItems();
-  }, [items, searchQuery, activeFilter]);
-
-  // Listen for item saved events from chat
-  useEffect(() => {
-    const handleItemSaved = (event: any) => {
-      console.log('Item saved event received:', event.detail);
-      loadItems();
-    };
-    window.addEventListener('itemSaved', handleItemSaved);
-    return () => window.removeEventListener('itemSaved', handleItemSaved);
-  }, [loadItems]);
-
-  const filterItems = () => {
     let filtered = [...items];
 
-    // Filter by type
     if (activeFilter === 'notes') {
-      filtered = filtered.filter(item => item.type === 'note');
+      filtered = filtered.filter(i => i.type === 'note');
     } else if (activeFilter === 'links') {
-      filtered = filtered.filter(item => item.type === 'link');
+      filtered = filtered.filter(i => i.type === 'link');
+    } else if (activeFilter === 'recent') {
+      filtered = local.filterByDate(filtered, 30);
     }
 
-    // Filter by search query
     if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(item => {
-        const titleMatch = item.title?.toLowerCase().includes(query);
-        const bodyMatch = item.body?.toLowerCase().includes(query);
-        const urlMatch = item.url?.toLowerCase().includes(query);
-        const tagMatch = item.tags.some(tag => tag.toLowerCase().includes(query));
-        return titleMatch || bodyMatch || urlMatch || tagMatch;
-      });
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(i =>
+        i.title?.toLowerCase().includes(q) ||
+        i.body?.toLowerCase().includes(q) ||
+        i.url?.toLowerCase().includes(q) ||
+        i.tags.some(t => t.toLowerCase().includes(q))
+      );
     }
 
-    // KAN-7: Sort pinned items first
+    // Pinned items first
     filtered.sort((a, b) => {
       if (a.isPinned && !b.isPinned) return -1;
       if (!a.isPinned && b.isPinned) return 1;
@@ -110,215 +78,106 @@ export default function Home() {
     });
 
     setFilteredItems(filtered);
-  };
+  }, [items, searchQuery, activeFilter]);
 
-  const handleSearch = (query: string) => {
-    setSearchQuery(query);
-  };
+  // Chat saves: item comes back from the /api/chat response
+  useEffect(() => {
+    const handleItemSaved = (event: any) => {
+      const savedItem: ContentItem = event.detail;
+      if (!savedItem?.id) return;
+      setItems(prev => {
+        // avoid duplicates
+        if (prev.some(i => i.id === savedItem.id)) return prev;
+        const updated = [savedItem, ...prev];
+        local.persistItems(updated);
+        return updated;
+      });
+    };
+    window.addEventListener('itemSaved', handleItemSaved);
+    return () => window.removeEventListener('itemSaved', handleItemSaved);
+  }, []);
+
+  const handleSearch = (query: string) => setSearchQuery(query);
 
   const handleFilterChange = (filter: 'all' | 'notes' | 'links' | 'recent') => {
     setActiveFilter(filter);
-    if (filter === 'recent') {
-      loadItems();
-    } else {
-      fetch('/api/items')
-        .then(res => res.json())
-        .then(data => setItems(data.items || []))
-        .catch(console.error);
-    }
   };
 
   const handleAddItem = async (type: 'note' | 'link', data: any) => {
     try {
       setError(null);
-      const response = await fetch('/api/items', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, ...data }),
-      });
-      const result = await response.json();
-      
+      // For links, ask the server to fetch title/tags via AI, then store client-side
+      if (type === 'link') {
+        const response = await fetch('/api/items', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type, ...data }),
+        });
+        const result = await response.json();
+        if (result.isDuplicate) {
+          setError('This link is already saved!');
+          setTimeout(() => setError(null), 5000);
+          return;
+        }
+        if (result.item) {
+          saveItems([result.item, ...items]);
+          setShowAddModal(false);
+          return;
+        }
+      }
+      // For notes (or link fallback), create locally
+      const result = type === 'note'
+        ? local.saveNote(items, data)
+        : local.saveLink(items, data);
+
       if (result.isDuplicate) {
         setError('This link is already saved!');
         setTimeout(() => setError(null), 5000);
       } else {
-        await loadItems();
+        saveItems([result.item, ...items]);
         setShowAddModal(false);
       }
-    } catch (error) {
-      console.error('Error adding item:', error);
+    } catch (err) {
+      console.error('Error adding item:', err);
       setError('Failed to add item. Please try again.');
       setTimeout(() => setError(null), 5000);
     }
   };
 
-  const handleDeleteItem = async (id: string) => {
-    try {
-      setError(null);
-      setDeletingItemId(id);
-
-      // Optimistic update: remove item from UI immediately
-      const itemToDelete = items.find(item => item.id === id);
-      setItems(prev => prev.filter(item => item.id !== id));
-      setFilteredItems(prev => prev.filter(item => item.id !== id));
-
-      // Close detail panel if this item was selected
-      if (selectedItem?.id === id) {
-        setSelectedItem(null);
-      }
-
-      const response = await fetch(`/api/items/delete?id=${id}`, {
-        method: 'DELETE',
-      });
-      
-      if (!response.ok) {
-        // Revert optimistic update on error
-        if (itemToDelete) {
-          setItems(prev => [...prev, itemToDelete].sort((a, b) => 
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-          ));
-        }
-        
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to delete item');
-      }
-
-      // Success - reload to ensure consistency
-      await loadItems();
-    } catch (error) {
-      console.error('Error deleting item:', error);
-      setError(error instanceof Error ? error.message : 'Failed to delete item. Please try again.');
-      setTimeout(() => setError(null), 5000);
-    } finally {
-      setDeletingItemId(null);
-    }
+  const handleDeleteItem = (id: string) => {
+    setDeletingItemId(id);
+    if (selectedItem?.id === id) setSelectedItem(null);
+    saveItems(local.deleteItem(items, id));
+    setDeletingItemId(null);
   };
 
-  // Bulk operations
-  const handleBulkDelete = async () => {
+  const handleBulkDelete = () => {
     if (selectedIds.size === 0) return;
-    
-    try {
-      setError(null);
-      setIsBulkDeleting(true);
-
-      const idsToDelete = Array.from(selectedIds);
-
-      // Optimistic update
-      setItems(prev => prev.filter(item => !selectedIds.has(item.id)));
-      setFilteredItems(prev => prev.filter(item => !selectedIds.has(item.id)));
-
-      // Close detail panel if selected item was deleted
-      if (selectedItem && selectedIds.has(selectedItem.id)) {
-        setSelectedItem(null);
-      }
-
-      const response = await fetch('/api/items/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'delete',
-          ids: idsToDelete,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to delete items');
-      }
-
-      const result = await response.json();
-      
-      // Clear selection and exit selection mode
-      setSelectedIds(new Set());
-      setSelectionMode(false);
-
-      // Reload to ensure consistency
-      await loadItems();
-
-      // Show success message
-      if (result.deletedCount > 0) {
-        setError(null);
-      }
-    } catch (error) {
-      console.error('Error bulk deleting:', error);
-      setError('Failed to delete items. Please try again.');
-      await loadItems(); // Reload to restore state
-      setTimeout(() => setError(null), 5000);
-    } finally {
-      setIsBulkDeleting(false);
-    }
+    setIsBulkDeleting(true);
+    if (selectedItem && selectedIds.has(selectedItem.id)) setSelectedItem(null);
+    saveItems(items.filter(i => !selectedIds.has(i.id)));
+    setSelectedIds(new Set());
+    setSelectionMode(false);
+    setIsBulkDeleting(false);
   };
 
-  const handleBulkAddTag = async (tag: string) => {
+  const handleBulkAddTag = (tag: string) => {
     if (selectedIds.size === 0) return;
-    
-    try {
-      setError(null);
-
-      const response = await fetch('/api/items/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'addTag',
-          ids: Array.from(selectedIds),
-          tag,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to add tag');
-      }
-
-      // Reload to get updated items
-      await loadItems();
-
-      // Clear selection
-      setSelectedIds(new Set());
-      setSelectionMode(false);
-    } catch (error) {
-      console.error('Error adding tag:', error);
-      setError('Failed to add tag. Please try again.');
-      setTimeout(() => setError(null), 5000);
-    }
+    const updated = items.map(i =>
+      selectedIds.has(i.id) && !i.tags.includes(tag)
+        ? { ...i, tags: [...i.tags, tag.trim().toLowerCase()] }
+        : i
+    );
+    saveItems(updated);
+    setSelectedIds(new Set());
+    setSelectionMode(false);
   };
 
-  // KAN-7: Pin/Favorite items
-  const handlePinItem = async (id: string, isPinned: boolean) => {
-    try {
-      // Optimistic update
-      setItems(prev => prev.map(item =>
-        item.id === id ? { ...item, isPinned } : item
-      ));
-
-      const response = await fetch(`/api/items/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isPinned }),
-      });
-
-      if (!response.ok) {
-        // Revert on error
-        setItems(prev => prev.map(item =>
-          item.id === id ? { ...item, isPinned: !isPinned } : item
-        ));
-        throw new Error('Failed to update pin status');
-      }
-
-      const result = await response.json();
-      
-      // Update with server response
-      setItems(prev => prev.map(item =>
-        item.id === id ? result.item : item
-      ));
-
-      // Update selectedItem if it was pinned/unpinned
-      if (selectedItem?.id === id) {
-        setSelectedItem(result.item);
-      }
-    } catch (error) {
-      console.error('Error pinning item:', error);
-      setError('Failed to update pin status.');
-      setTimeout(() => setError(null), 3000);
+  const handlePinItem = (id: string, isPinned: boolean) => {
+    const { items: updated } = local.updateItem(items, id, { isPinned });
+    saveItems(updated);
+    if (selectedItem?.id === id) {
+      setSelectedItem(updated.find(i => i.id === id) ?? null);
     }
   };
 
@@ -338,37 +197,13 @@ export default function Home() {
     url?: string;
     tags?: string[];
   }) => {
-    try {
-      setError(null);
-      const response = await fetch(`/api/items/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to update item');
-      }
-
-      const result = await response.json();
-
-      // Update the item in local state
-      setItems(prev => prev.map(item =>
-        item.id === id ? result.item : item
-      ));
-
-      // Update selectedItem if it was the edited item
-      if (selectedItem?.id === id) {
-        setSelectedItem(result.item);
-      }
-
-      setShowEditModal(false);
-      setEditingItem(null);
-    } catch (error) {
-      console.error('Error updating item:', error);
-      throw error; // Re-throw to let modal handle the error
+    const { items: updated } = local.updateItem(items, id, updates);
+    saveItems(updated);
+    if (selectedItem?.id === id) {
+      setSelectedItem(updated.find(i => i.id === id) ?? null);
     }
+    setShowEditModal(false);
+    setEditingItem(null);
   };
 
   return (
@@ -442,7 +277,7 @@ export default function Home() {
                 setShowChat(false);
                 setSelectedItem(null);
               }}
-              onItemSaved={loadItems}
+              onItemSaved={() => {}}
             />
           )}
         </div>
