@@ -1,19 +1,31 @@
 /**
  * Redis Storage Adapter
- * 
+ *
  * Provides persistent storage using Redis (via REDIS_URL)
- * Falls back gracefully if Redis is not configured
+ * Falls back to file-based storage if Redis is not configured
  */
 
 import Redis from 'ioredis';
 import { ContentItem, SaveResult, UpdateResult } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 import { summarizeUrl } from './ai-summarizer';
+import { Storage } from './storage';
 
 const ITEMS_KEY = 'content-saver:items';
 
 // Singleton Redis client
 let redisClient: Redis | null = null;
+
+// Fallback storage instance
+let fallbackStorage: Storage | null = null;
+
+async function getFallbackStorage(): Promise<Storage> {
+  if (!fallbackStorage) {
+    fallbackStorage = new Storage();
+    await fallbackStorage.initialize();
+  }
+  return fallbackStorage;
+}
 
 /**
  * Get Redis client - lazy initialization
@@ -53,13 +65,14 @@ function isRedisConfigured(): boolean {
 }
 
 /**
- * Get all items from Redis storage
+ * Get all items from Redis storage (or fallback to file storage)
  */
 export async function getAllItems(): Promise<ContentItem[]> {
   const client = getRedisClient();
   if (!client) {
-    console.log('Redis not configured, using empty array');
-    return [];
+    console.log('Redis not configured, using file-based storage');
+    const storage = await getFallbackStorage();
+    return storage.getAllItems();
   }
 
   try {
@@ -74,12 +87,13 @@ export async function getAllItems(): Promise<ContentItem[]> {
 
 /**
  * Save all items to Redis storage
+ * Note: File-based storage is handled directly in saveNote/saveLink
  */
 async function saveAllItems(items: ContentItem[]): Promise<void> {
   const client = getRedisClient();
   if (!client) {
-    console.log('Redis not configured, skipping save');
-    return;
+    console.log('Redis not configured - using file-based storage');
+    return; // File storage handled in individual save functions
   }
 
   try {
@@ -106,6 +120,21 @@ export async function saveNote(input: {
   body: string;
   tags?: string[];
 }): Promise<SaveResult> {
+  const client = getRedisClient();
+
+  if (!client) {
+    // Use file-based storage directly
+    console.log('Using file-based storage for note save');
+    const storage = await getFallbackStorage();
+    return await storage.saveItem({
+      type: 'note',
+      title: input.title?.trim(),
+      body: input.body.trim(),
+      tags: (input.tags || []).map(t => t.trim().toLowerCase()).filter(t => t.length > 0),
+    });
+  }
+
+  // Redis storage
   const items = await getAllItems();
 
   const newItem: ContentItem = {
@@ -132,6 +161,47 @@ export async function saveLink(input: {
   comment?: string;
   tags?: string[];
 }): Promise<SaveResult> {
+  const client = getRedisClient();
+
+  // KAN-10: Generate AI summary and fetch title for the link
+  let summary: string | undefined;
+  let fetchedTitle: string | undefined;
+  try {
+    const result = await summarizeUrl(input.url, input.title);
+    if (result.summary) {
+      summary = result.summary;
+    }
+    if (result.title) {
+      fetchedTitle = result.title;
+    }
+  } catch (error) {
+    console.error('Error generating summary:', error);
+    // Continue without summary - don't fail the save
+  }
+
+  if (!client) {
+    // Use file-based storage directly
+    console.log('Using file-based storage for link save');
+    const storage = await getFallbackStorage();
+    const result = await storage.saveItem({
+      type: 'link',
+      url: input.url.trim(),
+      title: input.title?.trim() || fetchedTitle,
+      body: input.comment?.trim(),
+      tags: (input.tags || []).map(t => t.trim().toLowerCase()).filter(t => t.length > 0),
+      skipMetadataFetch: true, // We already fetched with AI
+    });
+
+    // Add summary if generated
+    if (summary && result.item) {
+      result.item.summary = summary;
+      await storage.updateItem(result.item.id, { summary });
+    }
+
+    return result;
+  }
+
+  // Redis storage
   const items = await getAllItems();
 
   // Normalize URL for comparison
@@ -153,31 +223,15 @@ export async function saveLink(input: {
     return { item: existingItem, isDuplicate: true };
   }
 
-  // KAN-10: Generate AI summary and fetch title for the link
-  let summary: string | undefined;
-  let fetchedTitle: string | undefined;
-  try {
-    const result = await summarizeUrl(input.url, input.title);
-    if (result.summary) {
-      summary = result.summary;
-    }
-    if (result.title) {
-      fetchedTitle = result.title;
-    }
-  } catch (error) {
-    console.error('Error generating summary:', error);
-    // Continue without summary - don't fail the save
-  }
-
   const newItem: ContentItem = {
     id: uuidv4(),
     type: 'link',
     url: input.url.trim(),
-    title: input.title?.trim() || fetchedTitle || undefined, // Use provided title, or fetched title
+    title: input.title?.trim() || fetchedTitle || undefined,
     body: input.comment?.trim() || undefined,
     tags: (input.tags || []).map(t => t.trim().toLowerCase()).filter(t => t.length > 0),
     createdAt: new Date().toISOString(),
-    summary, // KAN-10: AI-generated summary
+    summary,
   };
 
   items.unshift(newItem);
@@ -200,6 +254,16 @@ export async function updateItem(
     summary?: string; // KAN-10
   }
 ): Promise<UpdateResult | null> {
+  const client = getRedisClient();
+
+  if (!client) {
+    // Use file-based storage directly
+    console.log('Using file-based storage for update');
+    const storage = await getFallbackStorage();
+    return await storage.updateItem(id, updates);
+  }
+
+  // Redis storage
   const items = await getAllItems();
   const index = items.findIndex(item => item.id === id);
 
@@ -259,6 +323,16 @@ export async function updateItem(
  * Delete an item
  */
 export async function deleteItem(id: string): Promise<boolean> {
+  const client = getRedisClient();
+
+  if (!client) {
+    // Use file-based storage directly
+    console.log('Using file-based storage for delete');
+    const storage = await getFallbackStorage();
+    return await storage.deleteItem(id);
+  }
+
+  // Redis storage
   const items = await getAllItems();
   const index = items.findIndex(item => item.id === id);
 
@@ -310,6 +384,21 @@ export async function getRecentItems(days: number = 30): Promise<ContentItem[]> 
  * Bulk delete items
  */
 export async function bulkDeleteItems(ids: string[]): Promise<{ deletedCount: number }> {
+  const client = getRedisClient();
+
+  if (!client) {
+    // Use file-based storage directly
+    console.log('Using file-based storage for bulk delete');
+    let deletedCount = 0;
+    const storage = await getFallbackStorage();
+    for (const id of ids) {
+      const success = await storage.deleteItem(id);
+      if (success) deletedCount++;
+    }
+    return { deletedCount };
+  }
+
+  // Redis storage
   const items = await getAllItems();
   const idsSet = new Set(ids);
   const remaining = items.filter(item => !idsSet.has(item.id));
@@ -326,6 +415,27 @@ export async function bulkDeleteItems(ids: string[]): Promise<{ deletedCount: nu
  * Bulk add tag to items
  */
 export async function bulkAddTag(ids: string[], tag: string): Promise<{ updatedCount: number }> {
+  const client = getRedisClient();
+
+  if (!client) {
+    // Use file-based storage directly
+    console.log('Using file-based storage for bulk tag');
+    let updatedCount = 0;
+    const storage = await getFallbackStorage();
+    const normalizedTag = tag.trim().toLowerCase();
+
+    for (const id of ids) {
+      const item = storage.getItemById(id);
+      if (item && !item.tags.includes(normalizedTag)) {
+        const newTags = [...item.tags, normalizedTag];
+        await storage.updateItem(id, { tags: newTags });
+        updatedCount++;
+      }
+    }
+    return { updatedCount };
+  }
+
+  // Redis storage
   const items = await getAllItems();
   const idsSet = new Set(ids);
   const normalizedTag = tag.trim().toLowerCase();

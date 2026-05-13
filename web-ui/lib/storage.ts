@@ -355,7 +355,11 @@ export class Storage {
           this.normalizeUrl(item.url) === normalizedNewUrl
         );
         if (duplicate) {
-          throw new Error('A link with this URL already exists');
+          throw new Error(
+            `Duplicate URL: a link with this URL already exists (id: "${duplicate.id}"` +
+            `${duplicate.title ? `, title: "${duplicate.title}"` : ''}). ` +
+            'Use PUT /api/items/:id to update the existing entry, or DELETE /api/items/:id to remove it first.'
+          );
         }
         updatedItem.url = newUrl;
         hasChanges = true;

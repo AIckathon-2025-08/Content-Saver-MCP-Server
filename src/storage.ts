@@ -48,7 +48,10 @@ export class Storage {
       await writeFile(tempFile, JSON.stringify(this.items, null, 2), 'utf-8');
       await writeFile(STORAGE_FILE, JSON.stringify(this.items, null, 2), 'utf-8');
     } catch (error) {
-      throw new Error(`Failed to persist storage: ${error}`);
+      throw new Error(
+        `Failed to write storage file at "${STORAGE_FILE}": ${error}. ` +
+        'Check that the process has write permissions to the .content-saver directory.'
+      );
     }
   }
 
@@ -287,7 +290,11 @@ export class Storage {
           this.normalizeUrl(item.url) === normalizedNewUrl
         );
         if (duplicate) {
-          throw new Error('A link with this URL already exists');
+          throw new Error(
+            `Duplicate URL: a link with this URL already exists (id: "${duplicate.id}"` +
+            `${duplicate.title ? `, title: "${duplicate.title}"` : ''}). ` +
+            'Use update_item to modify the existing entry, or delete_item to remove it first.'
+          );
         }
         updatedItem.url = newUrl;
         hasChanges = true;

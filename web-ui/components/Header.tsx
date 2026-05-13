@@ -7,9 +7,10 @@ interface HeaderProps {
   onAddLink: () => void;
   onOpenChat: () => void;
   onOpenSettings: () => void;
+  onOpenMiroSync?: () => void;
 }
 
-export default function Header({ searchQuery, onSearch, onAddNote, onAddLink, onOpenChat, onOpenSettings }: HeaderProps) {
+export default function Header({ searchQuery, onSearch, onAddNote, onAddLink, onOpenChat, onOpenSettings, onOpenMiroSync }: HeaderProps) {
   return (
     <header className="sticky top-0 z-10 bg-white border-b border-gray-200 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -63,18 +64,19 @@ export default function Header({ searchQuery, onSearch, onAddNote, onAddLink, on
 
           {/* Action Buttons */}
           <div className="flex items-center gap-2 flex-shrink-0">
-            {/* Settings Button (Tertiary) */}
-            <button
-              onClick={onOpenSettings}
-              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors focus-ring"
-              title="Settings"
-              aria-label="Open settings"
-            >
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </button>
+            {/* Miro Sync Button */}
+            {onOpenMiroSync && (
+              <button
+                onClick={onOpenMiroSync}
+                className="p-2 text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50 rounded-lg transition-colors focus-ring"
+                title="Sync Miro Feedback"
+                aria-label="Sync feedback from Miro to Jira"
+              >
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M17.392 15.129L24 4.12v15.752l-6.608-4.743zM0 4.12l6.608 11.009L0 19.872V4.12zm8.203 11.009l3.869-6.443-3.869-6.435L4.204 8.69l4 6.438z"/>
+                </svg>
+              </button>
+            )}
 
             {/* AI Chat Button (Primary) */}
             <button
@@ -120,6 +122,19 @@ export default function Header({ searchQuery, onSearch, onAddNote, onAddLink, on
             >
               <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+
+            {/* Settings Button — always last, anchors the far right of the nav bar */}
+            <button
+              onClick={onOpenSettings}
+              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors focus-ring"
+              title="Settings"
+              aria-label="Open settings"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
             </button>
           </div>

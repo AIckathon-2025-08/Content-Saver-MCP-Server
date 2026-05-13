@@ -68,21 +68,28 @@ export default function ChatPanel({ items, onClose, onItemSaved }: ChatPanelProp
       });
 
       const data = await response.json();
-      
+
       if (response.ok) {
-        setMessages(prev => [...prev, { 
-          role: 'assistant', 
+        setMessages(prev => [...prev, {
+          role: 'assistant',
           content: data.response,
           followUpQuestions: data.followUpQuestions,
         }]);
-        
+
         // If an item was saved, refresh the items list
         if (data.savedItem) {
-          // Trigger a refresh by calling parent's loadItems if available
+          console.log('Item saved via chat, refreshing list:', data.savedItem);
+
+          // Trigger both event and callback for maximum compatibility
           window.dispatchEvent(new CustomEvent('itemSaved', { detail: data.savedItem }));
-          if (onItemSaved) {
-            onItemSaved();
-          }
+
+          // Call the callback with a small delay to ensure the save is complete
+          setTimeout(() => {
+            if (onItemSaved) {
+              console.log('Calling onItemSaved callback');
+              onItemSaved();
+            }
+          }, 100);
         }
       } else {
         setMessages(prev => [...prev, { 

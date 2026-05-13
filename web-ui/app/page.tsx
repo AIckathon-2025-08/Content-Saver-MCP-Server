@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
 import ItemList from '@/components/ItemList';
@@ -9,6 +9,7 @@ import AddItemModal from '@/components/AddItemModal';
 import EditItemModal from '@/components/EditItemModal';
 import ChatPanel from '@/components/ChatPanel';
 import SettingsModal from '@/components/SettingsModal';
+import MiroSyncModal from '@/components/MiroSyncModal';
 import { ContentItem } from '@/types';
 
 export default function Home() {
@@ -21,6 +22,7 @@ export default function Home() {
   const [addModalType, setAddModalType] = useState<'note' | 'link'>('note');
   const [showChat, setShowChat] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showMiroSync, setShowMiroSync] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingItem, setEditingItem] = useState<ContentItem | null>(null);
   const [loading, setLoading] = useState(true);
@@ -32,25 +34,10 @@ export default function Home() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
-  useEffect(() => {
-    loadItems();
-  }, []);
-
-  useEffect(() => {
-    filterItems();
-  }, [items, searchQuery, activeFilter]);
-
-  // Listen for item saved events from chat
-  useEffect(() => {
-    const handleItemSaved = () => {
-      loadItems();
-    };
-    window.addEventListener('itemSaved', handleItemSaved);
-    return () => window.removeEventListener('itemSaved', handleItemSaved);
-  }, []);
-
-  const loadItems = async () => {
+  // Define loadItems first, before useEffects that depend on it
+  const loadItems = useCallback(async () => {
     try {
+      console.log('Loading items...', { activeFilter });
       setLoading(true);
       setError(null);
       let response;
@@ -59,12 +46,13 @@ export default function Home() {
       } else {
         response = await fetch('/api/items');
       }
-      
+
       if (!response.ok) {
         throw new Error('Failed to load items');
       }
-      
+
       const data = await response.json();
+      console.log('Items loaded:', data.items?.length || 0);
       setItems(data.items || []);
     } catch (error) {
       console.error('Error loading items:', error);
@@ -72,7 +60,25 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeFilter]);
+
+  useEffect(() => {
+    loadItems();
+  }, [loadItems]);
+
+  useEffect(() => {
+    filterItems();
+  }, [items, searchQuery, activeFilter]);
+
+  // Listen for item saved events from chat
+  useEffect(() => {
+    const handleItemSaved = (event: any) => {
+      console.log('Item saved event received:', event.detail);
+      loadItems();
+    };
+    window.addEventListener('itemSaved', handleItemSaved);
+    return () => window.removeEventListener('itemSaved', handleItemSaved);
+  }, [loadItems]);
 
   const filterItems = () => {
     let filtered = [...items];
@@ -381,6 +387,7 @@ export default function Home() {
           onAddLink={() => handleOpenAddModal('link')}
           onOpenChat={() => setShowChat(true)}
           onOpenSettings={() => setShowSettings(true)}
+          onOpenMiroSync={() => setShowMiroSync(true)}
         />
 
         {/* Error Toast */}
@@ -466,6 +473,11 @@ export default function Home() {
           onClose={() => setShowSettings(false)}
         />
       )}
+
+      <MiroSyncModal
+        isOpen={showMiroSync}
+        onClose={() => setShowMiroSync(false)}
+      />
     </div>
   );
 }

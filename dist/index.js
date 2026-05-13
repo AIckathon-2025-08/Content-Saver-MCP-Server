@@ -204,7 +204,8 @@ class ContentSaverServer {
     }
     async handleSaveNote(args) {
         if (!args.body || args.body.trim() === '') {
-            throw new Error('Body text is required for notes');
+            throw new Error('Missing required field "body": the note body text cannot be empty. ' +
+                'Example: { "body": "My note content here", "title": "Optional title" }');
         }
         const result = await this.storage.saveItem({
             type: 'note',
@@ -241,14 +242,17 @@ class ContentSaverServer {
     }
     async handleSaveLink(args) {
         if (!args.url || args.url.trim() === '') {
-            throw new Error('URL is required for links');
+            throw new Error('Missing required field "url": provide a URL starting with http://, https://, or ftp://. ' +
+                'Example: { "url": "https://example.com" }');
         }
         // Validate URL format
         try {
             new URL(args.url);
         }
         catch {
-            throw new Error('Invalid URL format');
+            throw new Error(`Invalid URL format: "${args.url}". ` +
+                'URLs must start with a valid protocol — use http://, https://, or ftp://. ' +
+                'Example: https://example.com');
         }
         const result = await this.storage.saveItem({
             type: 'link',
@@ -285,6 +289,20 @@ class ContentSaverServer {
         };
     }
     async handleSearch(args) {
+        if (args.dateFrom !== undefined) {
+            const d = new Date(args.dateFrom);
+            if (isNaN(d.getTime())) {
+                throw new Error(`Invalid date for "dateFrom": "${args.dateFrom}". ` +
+                    'Use ISO 8601 format: YYYY-MM-DD (e.g. 2024-01-15) or a full timestamp like 2024-01-15T00:00:00Z');
+            }
+        }
+        if (args.dateTo !== undefined) {
+            const d = new Date(args.dateTo);
+            if (isNaN(d.getTime())) {
+                throw new Error(`Invalid date for "dateTo": "${args.dateTo}". ` +
+                    'Use ISO 8601 format: YYYY-MM-DD (e.g. 2024-01-15) or a full timestamp like 2024-01-15T23:59:59Z');
+            }
+        }
         const results = this.storage.searchItems({
             query: args.query,
             tags: args.tags,
@@ -372,7 +390,8 @@ class ContentSaverServer {
     }
     async handleUpdateItem(args) {
         if (!args.id || args.id.trim() === '') {
-            throw new Error('Item ID is required');
+            throw new Error('Missing required field "id": provide the unique ID of the item to update. ' +
+                'Use the list_recent or search tools to find item IDs.');
         }
         // Validate URL format if provided
         if (args.url !== undefined && args.url.trim() !== '') {
@@ -380,7 +399,9 @@ class ContentSaverServer {
                 new URL(args.url);
             }
             catch {
-                throw new Error('Invalid URL format');
+                throw new Error(`Invalid URL format: "${args.url}". ` +
+                    'URLs must start with a valid protocol — use http://, https://, or ftp://. ' +
+                    'Example: https://example.com');
             }
         }
         const result = await this.storage.updateItem(args.id, {

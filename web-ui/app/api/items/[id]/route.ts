@@ -31,6 +31,20 @@ export async function PUT(
     const body = await request.json();
     const { title, body: itemBody, url, tags, isPinned } = body;
 
+    if (url !== undefined && url.trim() !== '') {
+      try {
+        new URL(url);
+      } catch {
+        return NextResponse.json(
+          {
+            error: `Invalid URL format: "${url}". URLs must start with a valid protocol — use http://, https://, or ftp://.`,
+            example: 'https://example.com',
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     const result = await kvStorage.updateItem(params.id, {
       title,
       body: itemBody,
