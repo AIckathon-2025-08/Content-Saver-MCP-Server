@@ -313,6 +313,7 @@ export class Storage {
     url?: string;
     tags?: string[];
     isPinned?: boolean;
+    summary?: string;
   }): Promise<UpdateResult | null> {
     const index = this.items.findIndex((item) => item.id === id);
     if (index === -1) {
