@@ -101,20 +101,28 @@ async function callMCPTool(name: string, args: any): Promise<any> {
 }
 
 /**
- * Get direct storage access for read operations
- * Uses local storage implementation (works on Vercel)
+ * Get direct storage access for read/write operations.
+ * Uses kv-storage (Redis-backed with file fallback) so chat saves
+ * persist in the same store as the rest of the app.
  */
 async function getDirectStorage(): Promise<any> {
   try {
-    // Use local storage implementation (always available)
-    // Dynamic import to ensure it's only loaded server-side
+    const kvStorage = await import('./kv-storage');
+    // Return a thin adapter that matches the Storage interface
+    return {
+      getAllItems: () => kvStorage.getAllItems(),
+      saveNote: (input: any) => kvStorage.saveNote(input),
+      saveLink: (input: any) => kvStorage.saveLink(input),
+      updateItem: (id: string, updates: any) => kvStorage.updateItem(id, updates),
+      deleteItem: (id: string) => kvStorage.deleteItem(id),
+      getItemById: (id: string) => kvStorage.getItemById(id),
+    };
+  } catch (error) {
+    console.error('Failed to initialize kv-storage, falling back to file storage:', error);
     const { Storage } = await import('./storage');
     const storage = new Storage();
     await storage.initialize();
     return storage;
-  } catch (error) {
-    console.error('Failed to initialize storage:', error);
-    throw new Error('Storage initialization failed');
   }
 }
 

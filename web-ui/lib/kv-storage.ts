@@ -1,8 +1,10 @@
 /**
- * Redis Storage Adapter
+ * Storage Adapter
  *
- * Provides persistent storage using Redis (via REDIS_URL)
- * Falls back to file-based storage if Redis is not configured
+ * Priority:
+ *  1. Vercel KV (@vercel/kv) when KV_REST_API_URL is set — persistent, free tier
+ *  2. Redis (ioredis) when REDIS_URL is set — persistent
+ *  3. File-based storage — ephemeral on Vercel, fine for local dev
  */
 
 import Redis from 'ioredis';
@@ -28,6 +30,33 @@ async function getFallbackStorage(): Promise<Storage> {
 }
 
 /**
+ * Vercel KV read/write helpers (uses @vercel/kv when KV_REST_API_URL is set)
+ */
+async function kvGet(key: string): Promise<string | null> {
+  try {
+    const { kv } = await import('@vercel/kv');
+    const value = await kv.get<string>(key);
+    return value ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function kvSet(key: string, value: string): Promise<void> {
+  try {
+    const { kv } = await import('@vercel/kv');
+    await kv.set(key, value);
+  } catch (err) {
+    console.error('Vercel KV set error:', err);
+    throw err;
+  }
+}
+
+function isVercelKVConfigured(): boolean {
+  return !!process.env.KV_REST_API_URL;
+}
+
+/**
  * Get Redis client - lazy initialization
  */
 function getRedisClient(): Redis | null {
@@ -35,7 +64,6 @@ function getRedisClient(): Redis | null {
   
   const redisUrl = process.env.REDIS_URL;
   if (!redisUrl) {
-    console.log('REDIS_URL not configured');
     return null;
   }
 
@@ -57,51 +85,65 @@ function getRedisClient(): Redis | null {
   }
 }
 
-/**
- * Check if Redis is configured
- */
 function isRedisConfigured(): boolean {
   return !!process.env.REDIS_URL;
 }
 
 /**
- * Get all items from Redis storage (or fallback to file storage)
+ * Get all items — tries Vercel KV → Redis → file storage in order
  */
 export async function getAllItems(): Promise<ContentItem[]> {
-  const client = getRedisClient();
-  if (!client) {
-    console.log('Redis not configured, using file-based storage');
-    const storage = await getFallbackStorage();
-    return storage.getAllItems();
+  // 1. Vercel KV
+  if (isVercelKVConfigured()) {
+    try {
+      const data = await kvGet(ITEMS_KEY);
+      return data ? (JSON.parse(data) as ContentItem[]) : [];
+    } catch (error) {
+      console.error('Error fetching items from Vercel KV:', error);
+    }
   }
 
-  try {
-    const data = await client.get(ITEMS_KEY);
-    if (!data) return [];
-    return JSON.parse(data) as ContentItem[];
-  } catch (error) {
-    console.error('Error fetching items from Redis:', error);
-    return [];
+  // 2. Redis
+  const client = getRedisClient();
+  if (client) {
+    try {
+      const data = await client.get(ITEMS_KEY);
+      if (!data) return [];
+      return JSON.parse(data) as ContentItem[];
+    } catch (error) {
+      console.error('Error fetching items from Redis:', error);
+    }
   }
+
+  // 3. File-based fallback
+  console.log('No persistent store configured, using file-based storage');
+  const storage = await getFallbackStorage();
+  return storage.getAllItems();
 }
 
 /**
- * Save all items to Redis storage
- * Note: File-based storage is handled directly in saveNote/saveLink
+ * Save all items — writes to whichever persistent store is configured
  */
 async function saveAllItems(items: ContentItem[]): Promise<void> {
-  const client = getRedisClient();
-  if (!client) {
-    console.log('Redis not configured - using file-based storage');
-    return; // File storage handled in individual save functions
+  // 1. Vercel KV
+  if (isVercelKVConfigured()) {
+    await kvSet(ITEMS_KEY, JSON.stringify(items));
+    return;
   }
 
-  try {
-    await client.set(ITEMS_KEY, JSON.stringify(items));
-  } catch (error) {
-    console.error('Error saving items to Redis:', error);
-    throw error;
+  // 2. Redis
+  const client = getRedisClient();
+  if (client) {
+    try {
+      await client.set(ITEMS_KEY, JSON.stringify(items));
+      return;
+    } catch (error) {
+      console.error('Error saving items to Redis:', error);
+      throw error;
+    }
   }
+
+  // 3. File fallback — handled in individual save functions
 }
 
 /**
@@ -121,9 +163,9 @@ export async function saveNote(input: {
   tags?: string[];
 }): Promise<SaveResult> {
   const client = getRedisClient();
+  const usePersistentStore = isVercelKVConfigured() || !!client;
 
-  if (!client) {
-    // Use file-based storage directly
+  if (!usePersistentStore) {
     console.log('Using file-based storage for note save');
     const storage = await getFallbackStorage();
     return await storage.saveItem({
@@ -134,7 +176,6 @@ export async function saveNote(input: {
     });
   }
 
-  // Redis storage
   const items = await getAllItems();
 
   const newItem: ContentItem = {
@@ -179,8 +220,9 @@ export async function saveLink(input: {
     // Continue without summary - don't fail the save
   }
 
-  if (!client) {
-    // Use file-based storage directly
+  const usePersistentStore = isVercelKVConfigured() || !!client;
+
+  if (!usePersistentStore) {
     console.log('Using file-based storage for link save');
     const storage = await getFallbackStorage();
     const result = await storage.saveItem({
@@ -189,10 +231,9 @@ export async function saveLink(input: {
       title: input.title?.trim() || fetchedTitle,
       body: input.comment?.trim(),
       tags: (input.tags || []).map(t => t.trim().toLowerCase()).filter(t => t.length > 0),
-      skipMetadataFetch: true, // We already fetched with AI
+      skipMetadataFetch: true,
     });
 
-    // Add summary if generated
     if (summary && result.item) {
       result.item.summary = summary;
       await storage.updateItem(result.item.id, { summary });
@@ -201,7 +242,6 @@ export async function saveLink(input: {
     return result;
   }
 
-  // Redis storage
   const items = await getAllItems();
 
   // Normalize URL for comparison
@@ -256,14 +296,12 @@ export async function updateItem(
 ): Promise<UpdateResult | null> {
   const client = getRedisClient();
 
-  if (!client) {
-    // Use file-based storage directly
+  if (!isVercelKVConfigured() && !client) {
     console.log('Using file-based storage for update');
     const storage = await getFallbackStorage();
     return await storage.updateItem(id, updates);
   }
 
-  // Redis storage
   const items = await getAllItems();
   const index = items.findIndex(item => item.id === id);
 
@@ -325,14 +363,12 @@ export async function updateItem(
 export async function deleteItem(id: string): Promise<boolean> {
   const client = getRedisClient();
 
-  if (!client) {
-    // Use file-based storage directly
+  if (!isVercelKVConfigured() && !client) {
     console.log('Using file-based storage for delete');
     const storage = await getFallbackStorage();
     return await storage.deleteItem(id);
   }
 
-  // Redis storage
   const items = await getAllItems();
   const index = items.findIndex(item => item.id === id);
 
