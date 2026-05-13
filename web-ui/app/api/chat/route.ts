@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ContentItem } from '@/types';
-import { saveNote, saveLink } from '@/lib/mcp-client';
+import { v4 as uuidv4 } from 'uuid';
 import { getOpenAIKey, isValidOpenAIKeyFormat } from '@/lib/config';
 
 // Simple in-memory rate limiting (for production, use Redis or similar)
@@ -235,6 +235,10 @@ Make the follow-up questions:
   }
 }
 
+/**
+ * Build and return a ContentItem — no server-side persistence.
+ * The client stores it in localStorage via the itemSaved event.
+ */
 async function handleSaveIntent(
   intent: { type: 'link' | 'note'; url?: string; content?: string },
   message: string,
@@ -242,234 +246,116 @@ async function handleSaveIntent(
   apiKey: string
 ): Promise<NextResponse> {
   try {
-    console.log('Handling save intent:', intent);
-    
+    // ── LINK ────────────────────────────────────────────────────────────────
     if (intent.type === 'link' && intent.url) {
-      console.log('Saving link:', intent.url);
-      // Extract content and generate tags using AI
-      const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [
-            {
-              role: 'system',
-              content: `You are a content analyzer. Extract key information from URLs and generate smart tags.
+      let title: string | undefined;
+      let description: string | undefined;
+      let tags: string[] = [];
 
-CRITICAL: You MUST respond with ONLY valid JSON. No markdown, no code blocks, no explanations - just pure JSON.
-
-For a URL, provide:
-1. A descriptive title (2-8 words)
-2. A brief description/summary (1-2 sentences)
-3. 3-5 relevant tags as an ARRAY (lowercase, specific, meaningful)
-
-Example valid response:
-{"title": "Georgia Travel Destinations", "description": "Official tourism website showcasing destinations in Georgia", "tags": ["georgia", "travel", "tourism", "destinations"]}
-
-Always return valid JSON with these exact keys: title (string), description (string), tags (array of strings).`,
-            },
-            {
-              role: 'user',
-              content: `Analyze this URL and provide title, description, and tags: ${intent.url}`,
-            },
-          ],
-          temperature: 0.7,
-          response_format: { type: 'json_object' },
-        }),
-      });
-
-      if (aiResponse.ok) {
-        const aiData = await aiResponse.json();
-        const content = aiData.choices[0]?.message?.content || '{}';
-        console.log('AI raw response:', content);
-        
-        let extracted: any = {};
-        try {
-          extracted = JSON.parse(content);
-        } catch (e) {
-          console.error('Failed to parse AI response as JSON:', e);
-          // Try to extract tags from text if JSON parsing fails
-          const tagMatch = content.match(/"tags"\s*:\s*\[(.*?)\]/);
-          if (tagMatch) {
-            extracted.tags = tagMatch[1].split(',').map((t: string) => t.trim().replace(/"/g, ''));
-          }
-        }
-        
-        // Ensure tags is an array
-        let tags: string[] = [];
-        if (Array.isArray(extracted.tags)) {
-          tags = extracted.tags.filter((t: any) => typeof t === 'string' && t.trim().length > 0).map((t: string) => t.toLowerCase().trim());
-        } else if (typeof extracted.tags === 'string') {
-          // Handle comma-separated string
-          tags = extracted.tags.split(',').map((t: string) => t.trim().toLowerCase()).filter((t: string) => t.length > 0);
-        }
-        
-        // Generate fallback tags from URL if AI didn't provide any
-        if (tags.length === 0) {
-          try {
-            const urlObj = new URL(intent.url);
-            const domain = urlObj.hostname.replace('www.', '').split('.')[0];
-            const pathParts = urlObj.pathname.split('/').filter(p => p.length > 2);
-            
-            if (domain && domain.length > 2) {
-              tags.push(domain.toLowerCase());
-            }
-            pathParts.slice(0, 2).forEach(part => {
-              const cleanPart = part.replace(/[-_]/g, '-').toLowerCase();
-              if (cleanPart.length > 3 && !tags.includes(cleanPart)) {
-                tags.push(cleanPart);
-              }
-            });
-            console.log('Generated fallback tags from URL:', tags);
-          } catch (e) {
-            console.error('Failed to generate fallback tags:', e);
-          }
-        }
-        
-        console.log('AI extracted:', { title: extracted.title, description: extracted.description, tags });
-        console.log('Final tags array:', tags);
-        
-        const result = await saveLink({
-          url: intent.url,
-          title: extracted.title || undefined,
-          comment: extracted.description || undefined,
-          tags: tags,
-        });
-        
-        console.log('Save result:', { 
-          isDuplicate: result.isDuplicate, 
-          itemId: result.item.id,
-          savedTags: result.item.tags,
-          tagsCount: result.item.tags.length
-        });
-
-        if (result.isDuplicate) {
-          const tagsDisplay = result.item.tags.length > 0 ? result.item.tags.join(', ') : 'none';
-          return NextResponse.json({
-            response: `ℹ️ This link is already saved!\n\n**${result.item.title || '(Untitled)'}**\n${result.item.url}\n\n**Tags:** ${tagsDisplay}\n\n${tags.length > 0 ? `I've merged the new tags with existing ones.` : `You can ask me to add tags to this link!`}`,
-            savedItem: result.item,
-          });
-        }
-
-        const tagsDisplay = result.item.tags.length > 0 ? result.item.tags.join(', ') : 'none';
-        return NextResponse.json({
-          response: `✅ **Saved successfully!**\n\n**${result.item.title || '(Untitled)'}**\n${result.item.url}\n\n**Description:** ${result.item.body || 'No description'}\n\n**Tags:** ${tagsDisplay}\n\nI've automatically analyzed the content and added relevant tags. You can ask me to analyze it further or search for similar items!`,
-          savedItem: result.item,
-        });
-      } else {
-        // If AI extraction failed, generate tags from URL
-        console.log('AI extraction failed, generating tags from URL');
-        let fallbackTags: string[] = [];
-        try {
-          const urlObj = new URL(intent.url);
-          const domain = urlObj.hostname.replace('www.', '').split('.')[0];
-          const pathParts = urlObj.pathname.split('/').filter(p => p.length > 2);
-          
-          if (domain && domain.length > 2) {
-            fallbackTags.push(domain.toLowerCase());
-          }
-          pathParts.slice(0, 2).forEach(part => {
-            const cleanPart = part.replace(/[-_]/g, '-').toLowerCase();
-            if (cleanPart.length > 3 && !fallbackTags.includes(cleanPart)) {
-              fallbackTags.push(cleanPart);
-            }
-          });
-          console.log('Generated fallback tags:', fallbackTags);
-        } catch (e) {
-          console.error('Failed to generate fallback tags:', e);
-        }
-        
-        const result = await saveLink({
-          url: intent.url,
-          tags: fallbackTags,
-        });
-        
-        if (result.isDuplicate) {
-          const tagsDisplay = result.item.tags.length > 0 ? result.item.tags.join(', ') : 'none';
-          return NextResponse.json({
-            response: `ℹ️ **Link updated!**\n\n**${result.item.title || '(Untitled)'}**\n${result.item.url}\n\n**Tags:** ${tagsDisplay}\n\nI've merged the new tags with existing ones.`,
-            savedItem: result.item,
-          });
-        }
-        
-        const tagsDisplay = result.item.tags.length > 0 ? result.item.tags.join(', ') : 'none';
-        return NextResponse.json({
-          response: `✅ **Link saved!**\n\n**URL:** ${result.item.url}\n\n**Tags:** ${tagsDisplay}\n\nI've saved the link with automatically generated tags.`,
-          savedItem: result.item,
-        });
-      }
-    }
-    
-    // Handle note saving
-    if (intent.type === 'note' && intent.content) {
+      // AI enrichment (best-effort)
       try {
-        // Generate tags for note content
-        const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-          },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
           body: JSON.stringify({
             model: 'gpt-4o-mini',
+            response_format: { type: 'json_object' },
             messages: [
               {
                 role: 'system',
-                content: `Analyze this note content and generate 3-5 relevant tags. Return JSON: {"tags": ["tag1", "tag2"]}`,
+                content: 'Return ONLY valid JSON with keys: title (string, 2-8 words), description (string, 1-2 sentences), tags (array of 3-5 lowercase strings).',
               },
-              {
-                role: 'user',
-                content: `Generate tags for: ${intent.content}`,
-              },
+              { role: 'user', content: `Analyze this URL: ${intent.url}` },
             ],
-            temperature: 0.7,
-            response_format: { type: 'json_object' },
+            max_tokens: 200,
+            temperature: 0.3,
           }),
         });
 
-        let tags: string[] = [];
-        if (aiResponse.ok) {
-          const aiData = await aiResponse.json();
-          const extracted = JSON.parse(aiData.choices[0]?.message?.content || '{}');
-          tags = extracted.tags || [];
+        if (aiRes.ok) {
+          const parsed = JSON.parse((await aiRes.json()).choices[0]?.message?.content || '{}');
+          title = parsed.title || undefined;
+          description = parsed.description || undefined;
+          tags = Array.isArray(parsed.tags)
+            ? parsed.tags.map((t: any) => String(t).toLowerCase().trim()).filter(Boolean)
+            : [];
         }
+      } catch { /* enrichment is best-effort */ }
 
-        const result = await saveNote({
-          body: intent.content,
-          tags,
-        });
-
-        return NextResponse.json({
-          response: `✅ **Note saved!**\n\n**Content:** ${result.item.body}\n\n**Tags:** ${tags.join(', ') || 'none'}\n\nI've automatically added relevant tags based on the content.`,
-          savedItem: result.item,
-        });
-      } catch (error: any) {
-        console.error('Error saving note:', error);
-        // Save note without tags if AI fails
-        const result = await saveNote({
-          body: intent.content!,
-          tags: [],
-        });
-        
-        return NextResponse.json({
-          response: `✅ **Note saved!**\n\n**Content:** ${result.item.body}`,
-          savedItem: result.item,
-        });
+      // Fallback tags from URL structure
+      if (tags.length === 0) {
+        try {
+          const u = new URL(intent.url);
+          const domain = u.hostname.replace('www.', '').split('.')[0];
+          if (domain.length > 2) tags.push(domain);
+          u.pathname.split('/').filter(p => p.length > 3).slice(0, 2).forEach(p =>
+            tags.push(p.replace(/[-_]/g, '-').toLowerCase())
+          );
+        } catch { /* ignore */ }
       }
+
+      const savedItem: ContentItem = {
+        id: uuidv4(),
+        type: 'link',
+        url: intent.url,
+        title,
+        body: description,
+        tags,
+        createdAt: new Date().toISOString(),
+      };
+
+      const tagsDisplay = tags.length > 0 ? tags.join(', ') : 'none';
+      return NextResponse.json({
+        response: `✅ **Saved!**\n\n**${title || '(Untitled)'}**\n${intent.url}\n\n**Description:** ${description || '—'}\n\n**Tags:** ${tagsDisplay}`,
+        savedItem,
+      });
     }
-    
-    return NextResponse.json({
-      response: 'I understand you want to save something. Please provide a URL or note content.',
-    });
+
+    // ── NOTE ─────────────────────────────────────────────────────────────────
+    if (intent.type === 'note' && intent.content) {
+      let tags: string[] = [];
+      try {
+        const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            response_format: { type: 'json_object' },
+            messages: [
+              { role: 'system', content: 'Return JSON: {"tags": ["tag1", "tag2", "tag3"]}' },
+              { role: 'user', content: `Generate 3-5 tags for: ${intent.content}` },
+            ],
+            max_tokens: 80,
+            temperature: 0.3,
+          }),
+        });
+        if (aiRes.ok) {
+          const parsed = JSON.parse((await aiRes.json()).choices[0]?.message?.content || '{}');
+          tags = Array.isArray(parsed.tags) ? parsed.tags.map((t: any) => String(t).toLowerCase().trim()).filter(Boolean) : [];
+        }
+      } catch { /* best-effort */ }
+
+      const savedItem: ContentItem = {
+        id: uuidv4(),
+        type: 'note',
+        body: intent.content,
+        tags,
+        createdAt: new Date().toISOString(),
+      };
+
+      return NextResponse.json({
+        response: `✅ **Note saved!**\n\n${intent.content}\n\n**Tags:** ${tags.join(', ') || 'none'}`,
+        savedItem,
+      });
+    }
+
+    return NextResponse.json({ response: 'Please provide a URL or note content to save.' });
   } catch (error: any) {
     console.error('Error handling save intent:', error);
-    return NextResponse.json({
-      response: `I tried to save that, but encountered an error: ${error.message}. Please try again or save manually using the + Note or + Link buttons.`,
-    }, { status: 500 });
+    return NextResponse.json(
+      { response: 'I had trouble saving that. Please try the + Note or + Link buttons instead.' },
+      { status: 500 }
+    );
   }
 }
 
